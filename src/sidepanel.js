@@ -5,9 +5,12 @@ import {
   estimateStorage,
   getGifBlob,
   listGifs,
+  listGroups,
   makeId,
-  requestPersistentStorage,
+  removeGroup,
+  renameGroup,
   saveGif,
+  saveGroups,
   touchGif,
   updateGif
 } from './store.js';
@@ -15,6 +18,8 @@ import { convertVideoToGif } from './gif-encoder.js';
 
 const ALL_GROUPS = '__all__';
 const FAVORITES_GROUP = '__favorites__';
+const FALLBACK_GROUP = 'General';
+const RESERVED_GROUP_LABELS = new Set(['all', 'favorites']);
 const PREVIEW_MODE = new URLSearchParams(location.search).has('preview');
 
 const state = {
@@ -22,25 +27,28 @@ const state = {
   activeGroup: ALL_GROUPS,
   search: '',
   sort: 'recent',
+  groups: [],
   previewId: null,
   objectUrls: new Map(),
   previewBlobs: new Map()
 };
 
 const el = {
-  addGifButton: document.querySelector('#addGifButton'),
-  addVideoButton: document.querySelector('#addVideoButton'),
+  addFileButton: document.querySelector('#addFileButton'),
   emptyState: document.querySelector('#emptyState'),
   favoriteCount: document.querySelector('#favoriteCount'),
   favoriteGrid: document.querySelector('#favoriteGrid'),
   favoritesSection: document.querySelector('#favoritesSection'),
   gifGrid: document.querySelector('#gifGrid'),
-  gifInput: document.querySelector('#gifInput'),
+  fileInput: document.querySelector('#fileInput'),
+  groupAddButton: document.querySelector('#groupAddButton'),
+  groupAddInput: document.querySelector('#groupAddInput'),
   groupBar: document.querySelector('#groupBar'),
-  groupInput: document.querySelector('#groupInput'),
+  groupDialog: document.querySelector('#groupDialog'),
+  groupEditButton: document.querySelector('#groupEditButton'),
+  groupList: document.querySelector('#groupList'),
   libraryCount: document.querySelector('#libraryCount'),
   libraryTitle: document.querySelector('#libraryTitle'),
-  persistButton: document.querySelector('#persistButton'),
   previewDialog: document.querySelector('#previewDialog'),
   previewFavorite: document.querySelector('#previewFavorite'),
   previewGroup: document.querySelector('#previewGroup'),
@@ -56,7 +64,7 @@ const el = {
   sortSelect: document.querySelector('#sortSelect'),
   statusText: document.querySelector('#statusText'),
   storageInfo: document.querySelector('#storageInfo'),
-  videoInput: document.querySelector('#videoInput')
+
 };
 
 wireEvents();
@@ -64,10 +72,15 @@ if (PREVIEW_MODE) enableUiInspector();
 refresh();
 
 function wireEvents() {
-  el.addGifButton.addEventListener('click', () => el.gifInput.click());
-  el.addVideoButton.addEventListener('click', () => el.videoInput.click());
-  el.gifInput.addEventListener('change', () => importGifFiles(el.gifInput.files));
-  el.videoInput.addEventListener('change', () => importVideoFile(el.videoInput.files?.[0]));
+  el.addFileButton.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', () => importMediaFiles(el.fileInput.files));
+  el.groupEditButton.addEventListener('click', openGroupDialog);
+  el.groupAddButton.addEventListener('click', addGroupFromDialog);
+  el.groupAddInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addGroupFromDialog();
+  });
   el.searchInput.addEventListener('input', () => {
     state.search = el.searchInput.value.trim().toLowerCase();
     render();
@@ -76,7 +89,6 @@ function wireEvents() {
     state.sort = el.sortSelect.value;
     render();
   });
-  el.persistButton.addEventListener('click', pinStorage);
 
   el.previewPaste.addEventListener('click', () => pasteGif(state.previewId, false));
   el.previewSend.addEventListener('click', () => pasteGif(state.previewId, true));
@@ -90,18 +102,17 @@ function wireEvents() {
   document.addEventListener('drop', (event) => {
     event.preventDefault();
     const files = [...(event.dataTransfer?.files || [])];
-    const gifs = files.filter((file) => file.type === 'image/gif');
-    const videos = files.filter((file) => file.type.startsWith('video/'));
-    if (gifs.length) importGifFiles(gifs);
-    if (videos[0]) importVideoFile(videos[0]);
+    importMediaFiles(files);
   });
 }
 
 async function refresh() {
   if (PREVIEW_MODE) {
     if (!state.gifs.length) state.gifs = createPreviewLibrary();
+    if (!state.groups.length) state.groups = deriveGifGroups(state.gifs);
   } else {
     state.gifs = await listGifs();
+    state.groups = await listGroups();
   }
 
   render();
@@ -111,23 +122,25 @@ async function refresh() {
 function render() {
   renderGroupBar();
 
+  const showingFavoritesGroup = state.activeGroup === FAVORITES_GROUP;
   const scoped = filteredByGroup(state.gifs);
   const searched = filterBySearch(scoped);
   const favorites = sortGifs(searched.filter((gif) => gif.favorite));
-  const library = sortGifs(searched.filter((gif) => !gif.favorite));
+  const library = showingFavoritesGroup ? favorites : sortGifs(searched.filter((gif) => !gif.favorite));
+  const showPinnedFavorites = state.activeGroup === ALL_GROUPS && favorites.length > 0;
 
-  el.favoritesSection.hidden = favorites.length === 0 || state.activeGroup === FAVORITES_GROUP;
+  el.favoritesSection.hidden = !showPinnedFavorites;
   el.favoriteCount.textContent = countText(favorites.length);
-  el.libraryTitle.textContent = state.activeGroup === FAVORITES_GROUP ? 'Favorites' : 'Library';
+  el.libraryTitle.textContent = showingFavoritesGroup ? 'Favorites' : 'Library';
   el.libraryCount.textContent = countText(library.length);
-  el.emptyState.hidden = state.gifs.length !== 0 || favorites.length !== 0 || library.length !== 0;
+  el.emptyState.hidden = state.gifs.length !== 0 || showPinnedFavorites || library.length !== 0;
 
-  renderGrid(el.favoriteGrid, state.activeGroup === FAVORITES_GROUP ? [] : favorites);
-  renderGrid(el.gifGrid, state.activeGroup === FAVORITES_GROUP ? favorites : library);
+  renderGrid(el.favoriteGrid, showPinnedFavorites ? favorites : []);
+  renderGrid(el.gifGrid, library);
 }
 
 function renderGroupBar() {
-  const groups = [...new Set(state.gifs.map((gif) => gif.group || 'General'))].sort((a, b) => a.localeCompare(b));
+  const groups = editableGroups();
   const buttons = [
     { id: ALL_GROUPS, label: 'All' },
     { id: FAVORITES_GROUP, label: 'Favorites' },
@@ -143,9 +156,6 @@ function renderGroupBar() {
     node.setAttribute('aria-pressed', String(state.activeGroup === button.id));
     node.addEventListener('click', () => {
       state.activeGroup = button.id;
-      if (button.id !== ALL_GROUPS && button.id !== FAVORITES_GROUP) {
-        el.groupInput.value = button.id;
-      }
       render();
     });
     return node;
@@ -182,7 +192,7 @@ function createGifCard(gif) {
   actions.append(
     cardButton('Paste', () => pasteGif(gif.id, false), '', 'gif-card-paste-button'),
     cardButton('Send', () => pasteGif(gif.id, true), '', 'gif-card-send-button'),
-    cardButton(gif.favorite ? 'Fav' : '+', () => toggleFavorite(gif), gif.favorite ? 'fav-active' : '', 'gif-card-favorite-button')
+    favoriteButton(gif)
   );
 
   card.append(img, meta, actions);
@@ -211,41 +221,61 @@ function cardButton(label, onClick, className = '', dataUi = '') {
   return button;
 }
 
-async function importGifFiles(files) {
-  const gifFiles = [...(files || [])].filter((file) => file.type === 'image/gif');
-  if (!gifFiles.length) return;
-
-  setBusy(true);
-  try {
-    for (const file of gifFiles) {
-      await saveImportedGif(file, file.name);
-    }
-    setStatus(`Added ${gifFiles.length} GIF${gifFiles.length === 1 ? '' : 's'}.`);
-    await refresh();
-  } finally {
-    el.gifInput.value = '';
-    setBusy(false);
-  }
+function favoriteButton(gif) {
+  const button = cardButton(
+    gif.favorite ? '★' : '☆',
+    () => toggleFavorite(gif),
+    `favorite-button${gif.favorite ? ' fav-active' : ''}`,
+    'gif-card-favorite-button'
+  );
+  const action = gif.favorite ? 'Remove from favorites' : 'Add to favorites';
+  button.dataset.favorite = String(gif.favorite);
+  button.setAttribute('aria-label', action);
+  button.title = action;
+  return button;
 }
 
-async function importVideoFile(file) {
-  if (!file) return;
-  setBusy(true);
-  setProgress(0);
+async function importMediaFiles(files) {
+  const mediaFiles = [...(files || [])].filter(isImportableMediaFile);
+  if (!mediaFiles.length) return;
 
+  let added = 0;
+  let converted = 0;
+
+  setBusy(true);
   try {
-    const gifBlob = await convertVideoToGif(file, {}, setProgress);
-    const filename = `${stripExtension(file.name)}.gif`;
-    await saveImportedGif(gifBlob, filename);
-    setStatus(`Converted ${file.name}.`);
+    for (const file of mediaFiles) {
+      if (file.type === 'image/gif') {
+        await saveImportedGif(file, file.name);
+        added += 1;
+        continue;
+      }
+
+      if (file.type.startsWith('video/')) {
+        setProgress(0);
+        const gifBlob = await convertVideoToGif(file, {}, setProgress);
+        await saveImportedGif(gifBlob, `${stripExtension(file.name)}.gif`);
+        converted += 1;
+        setProgress(null);
+      }
+    }
+
+    const parts = [];
+    if (added) parts.push(`added ${added} GIF${added === 1 ? '' : 's'}`);
+    if (converted) parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
+    setStatus(parts.length ? `Import complete: ${parts.join(', ')}.` : 'No supported files selected.');
     await refresh();
   } catch (error) {
     setStatus(error.message);
   } finally {
-    el.videoInput.value = '';
+    el.fileInput.value = '';
     setProgress(null);
     setBusy(false);
   }
+}
+
+function isImportableMediaFile(file) {
+  return file.type === 'image/gif' || file.type.startsWith('video/');
 }
 
 async function saveImportedGif(blob, filename) {
@@ -255,7 +285,7 @@ async function saveImportedGif(blob, filename) {
     id: makeId(),
     title: stripExtension(filename),
     filename: filename.endsWith('.gif') ? filename : `${filename}.gif`,
-    group: cleanGroup(el.groupInput.value),
+    group: currentImportGroup(),
     favorite: false,
     createdAt: now,
     updatedAt: now,
@@ -288,7 +318,7 @@ async function savePreviewEdits() {
   if (PREVIEW_MODE) {
     mutatePreviewGif(state.previewId, {
       title: el.previewTitle.value.trim() || 'Untitled GIF',
-      group: cleanGroup(el.previewGroup.value),
+      group: contentGroupName(el.previewGroup.value),
       favorite: el.previewFavorite.checked
     });
     setStatus('Saved GIF details.');
@@ -298,7 +328,7 @@ async function savePreviewEdits() {
 
   await updateGif(state.previewId, {
     title: el.previewTitle.value.trim() || 'Untitled GIF',
-    group: cleanGroup(el.previewGroup.value),
+    group: contentGroupName(el.previewGroup.value),
     favorite: el.previewFavorite.checked
   });
   setStatus('Saved GIF details.');
@@ -466,6 +496,156 @@ function positionInspectLabel(label, element) {
   const left = Math.max(8, Math.min(window.innerWidth - label.offsetWidth - 8, rect.left));
   label.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
+function openGroupDialog() {
+  renderGroupEditor();
+  el.groupAddInput.value = '';
+  el.groupDialog.showModal();
+}
+
+function renderGroupEditor() {
+  const groups = editableGroups();
+
+  if (!groups.length) {
+    const empty = document.createElement('div');
+    empty.className = 'group-editor-empty';
+    empty.dataset.ui = 'group-editor-empty';
+    empty.textContent = 'No editable groups';
+    el.groupList.replaceChildren(empty);
+    return;
+  }
+
+  el.groupList.replaceChildren(...groups.map(createGroupEditorRow));
+}
+
+function createGroupEditorRow(group) {
+  const row = document.createElement('div');
+  row.className = 'group-edit-row';
+  row.dataset.ui = 'group-edit-row';
+  row.dataset.group = group;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 32;
+  input.value = group;
+  input.dataset.ui = 'group-rename-input';
+  input.addEventListener('change', () => renameEditableGroup(group, input.value));
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    input.blur();
+  });
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'danger-button';
+  removeButton.dataset.ui = 'group-remove-button';
+  removeButton.textContent = 'Remove';
+  removeButton.addEventListener('click', () => removeEditableGroup(group));
+
+  row.append(input, removeButton);
+  return row;
+}
+
+async function addGroupFromDialog() {
+  const group = cleanGroup(el.groupAddInput.value);
+  if (!validateEditableGroup(group)) return;
+  if (editableGroups().includes(group)) {
+    setStatus(`Group "${group}" already exists.`);
+    return;
+  }
+
+  if (PREVIEW_MODE) {
+    state.groups = normalizeGroupList([...state.groups, group]);
+  } else {
+    state.groups = await saveGroups([...editableGroups(), group]);
+  }
+
+  state.activeGroup = group;
+  el.groupAddInput.value = '';
+  render();
+  renderGroupEditor();
+  setStatus(`Added group "${group}".`);
+}
+
+async function renameEditableGroup(oldGroup, rawNewGroup) {
+  const nextGroup = cleanGroup(rawNewGroup);
+  if (nextGroup === oldGroup) return;
+  if (!validateEditableGroup(nextGroup)) {
+    renderGroupEditor();
+    return;
+  }
+  if (editableGroups().some((group) => group !== oldGroup && group === nextGroup)) {
+    setStatus(`Group "${nextGroup}" already exists.`);
+    renderGroupEditor();
+    return;
+  }
+
+  if (PREVIEW_MODE) {
+    state.groups = normalizeGroupList(state.groups.map((group) => group === oldGroup ? nextGroup : group));
+    state.gifs = state.gifs.map((gif) => (gif.group || FALLBACK_GROUP) === oldGroup
+      ? { ...gif, group: nextGroup, updatedAt: Date.now() }
+      : gif);
+  } else {
+    await renameGroup(oldGroup, nextGroup);
+    state.gifs = await listGifs();
+    state.groups = await listGroups();
+  }
+
+  if (state.activeGroup === oldGroup) state.activeGroup = nextGroup;
+  render();
+  renderGroupEditor();
+  setStatus(`Renamed "${oldGroup}" to "${nextGroup}".`);
+}
+
+async function removeEditableGroup(group) {
+  const ok = confirm(`Remove "${group}"? GIFs in this group will move to ${FALLBACK_GROUP}.`);
+  if (!ok) return;
+
+  if (PREVIEW_MODE) {
+    state.groups = normalizeGroupList(state.groups.filter((item) => item !== group));
+    state.gifs = state.gifs.map((gif) => (gif.group || FALLBACK_GROUP) === group
+      ? { ...gif, group: FALLBACK_GROUP, updatedAt: Date.now() }
+      : gif);
+  } else {
+    await removeGroup(group, FALLBACK_GROUP);
+    state.gifs = await listGifs();
+    state.groups = await listGroups();
+  }
+
+  if (state.activeGroup === group) state.activeGroup = FALLBACK_GROUP;
+  render();
+  renderGroupEditor();
+  setStatus(`Removed group "${group}".`);
+}
+
+function validateEditableGroup(group) {
+  if (!group) {
+    setStatus('Group name is required.');
+    return false;
+  }
+  if (isReservedGroupLabel(group)) {
+    setStatus(`"${group}" is a fixed filter.`);
+    return false;
+  }
+  return true;
+}
+
+function editableGroups() {
+  return normalizeGroupList([...state.groups, ...deriveGifGroups(state.gifs)]);
+}
+
+function deriveGifGroups(gifs) {
+  return normalizeGroupList(gifs.map((gif) => gif.group || FALLBACK_GROUP));
+}
+
+function normalizeGroupList(groups) {
+  return [...new Set(groups.map(cleanGroup).filter((group) => group && !isReservedGroupLabel(group)))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function isReservedGroupLabel(group) {
+  return RESERVED_GROUP_LABELS.has(cleanGroup(group).toLowerCase());
+}
 async function loadGifBlob(id) {
   return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getGifBlob(id);
 }
@@ -592,10 +772,6 @@ async function updateStorageInfo() {
   el.storageInfo.textContent = `${bytesToHuman(estimate.usage)} used`;
 }
 
-async function pinStorage() {
-  const persisted = await requestPersistentStorage();
-  setStatus(persisted ? 'Storage pinned.' : 'Chrome kept default storage policy.');
-}
 
 function setBusy(isBusy) {
   for (const button of document.querySelectorAll('button')) {
@@ -617,7 +793,17 @@ function setStatus(message) {
 }
 
 function cleanGroup(value) {
-  return (value || 'General').trim().slice(0, 32) || 'General';
+  return (value || FALLBACK_GROUP).trim().slice(0, 32) || FALLBACK_GROUP;
+}
+
+function contentGroupName(value) {
+  const group = cleanGroup(value);
+  return isReservedGroupLabel(group) ? FALLBACK_GROUP : group;
+}
+
+function currentImportGroup() {
+  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP) return FALLBACK_GROUP;
+  return contentGroupName(state.activeGroup);
 }
 
 function stripExtension(filename) {
@@ -661,6 +847,17 @@ function readImageSize(blob) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

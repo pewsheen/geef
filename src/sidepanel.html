@@ -15,36 +15,34 @@
           <span id="storageInfo" data-ui="storage-info">Storage ready</span>
         </div>
       </div>
-      <button id="persistButton" class="icon-button" data-ui="persist-storage-button" type="button" title="Ask Chrome to keep GIF storage persistent">Pin</button>
+      <div class="header-actions" data-ui="header-actions">
+
+        <input id="fileInput" data-ui="media-file-input" type="file" accept="image/gif,video/mp4,video/webm,video/quicktime" multiple hidden>
+        <button id="addFileButton" class="icon-button add-file-button" data-ui="add-file-button" type="button" title="Add GIF or video">+</button>
+      </div>
     </header>
 
     <main class="app-shell" data-ui="app-shell">
-      <section class="toolbar" data-ui="import-toolbar" aria-label="Import tools">
-        <input id="gifInput" data-ui="gif-file-input" type="file" accept="image/gif" multiple hidden>
-        <input id="videoInput" data-ui="video-file-input" type="file" accept="video/mp4,video/webm,video/quicktime" hidden>
-
-        <button id="addGifButton" class="primary-button" data-ui="add-gif-button" type="button">Add GIF</button>
-        <button id="addVideoButton" class="secondary-button" data-ui="convert-video-button" type="button">MP4 to GIF</button>
-        <label class="group-field" data-ui="import-group-field">
-          <span data-ui="import-group-label">Group</span>
-          <input id="groupInput" data-ui="import-group-input" type="text" value="General" maxlength="32">
-        </label>
-      </section>
-
       <div id="progress" class="progress" data-ui="conversion-progress" hidden>
         <div class="progress-track" data-ui="conversion-progress-track"><span data-ui="conversion-progress-fill"></span></div>
         <strong data-ui="conversion-progress-label">Converting</strong>
       </div>
 
-      <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
+      <div class="group-row" data-ui="group-row">
+        <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
+        <button id="groupEditButton" class="icon-button group-edit-button" data-ui="group-edit-button" type="button" title="Edit groups" aria-label="Edit groups">⚙</button>
+      </div>
 
       <section class="filters" data-ui="library-filters" aria-label="Library filters">
         <input id="searchInput" data-ui="search-input" type="search" placeholder="Search GIFs">
-        <select id="sortSelect" data-ui="sort-select" aria-label="Sort GIFs">
-          <option value="recent">Recently used</option>
-          <option value="created">Recently added</option>
-          <option value="name">Name</option>
-        </select>
+        <div class="sort-field" data-ui="sort-field">
+          <span class="sort-icon" data-ui="sort-icon" aria-hidden="true">⇅</span>
+          <select id="sortSelect" data-ui="sort-select" aria-label="Sort GIFs">
+            <option value="recent">Recently used</option>
+            <option value="created">Recently added</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
       </section>
 
       <section id="favoritesSection" class="library-section" data-ui="favorites-section" hidden>
@@ -71,6 +69,27 @@
     <footer class="status-bar" data-ui="status-bar">
       <span id="statusText" data-ui="status-text">Ready</span>
     </footer>
+
+    <dialog id="groupDialog" class="group-dialog" data-ui="group-dialog">
+      <form method="dialog" data-ui="group-form">
+        <header data-ui="group-dialog-header">
+          <strong data-ui="group-dialog-title">Groups</strong>
+          <button value="cancel" class="icon-button" data-ui="group-dialog-close" type="submit" title="Close">X</button>
+        </header>
+
+        <div class="group-editor-fixed" data-ui="reserved-groups">
+          <span data-ui="reserved-group-all">All</span>
+          <span data-ui="reserved-group-favorites">Favorites</span>
+        </div>
+
+        <div id="groupList" class="group-list" data-ui="group-list"></div>
+
+        <div class="group-add-row" data-ui="group-add-row">
+          <input id="groupAddInput" data-ui="group-add-input" type="text" maxlength="32" placeholder="New group">
+          <button id="groupAddButton" data-ui="group-add-button" type="button">Add</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="previewDialog" class="preview-dialog" data-ui="preview-dialog">
       <form method="dialog" data-ui="preview-form">
@@ -108,4 +127,6 @@
     <script type="module" src="sidepanel.js"></script>
   </body>
 </html>
+
+
 

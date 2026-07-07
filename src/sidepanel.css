@@ -33,6 +33,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   min-width: 320px;
   margin: 0;
@@ -130,6 +134,33 @@ select {
   padding: 0 10px;
 }
 
+.header-actions {
+  display: grid;
+  grid-template-columns: 38px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+
+.add-file-button {
+  display: grid;
+  width: 38px;
+  min-width: 38px;
+  place-items: center;
+  padding: 0;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.add-file-button:hover {
+  background: var(--accent-strong);
+}
+
 .app-shell {
   display: grid;
   gap: 12px;
@@ -215,10 +246,124 @@ select {
   font-weight: 700;
 }
 
+
+.group-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-edit-button {
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  place-items: center;
+  padding: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.group-edit-button:hover {
+  color: var(--accent-strong);
+}
+
+.group-dialog {
+  width: min(430px, calc(100vw - 24px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.group-dialog::backdrop {
+  background: rgba(12, 18, 28, 0.45);
+}
+
+.group-dialog form {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.group-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.group-editor-fixed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.group-editor-fixed span {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  padding: 0 10px;
+}
+
+.group-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.group-edit-row,
+.group-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-edit-row button,
+.group-add-row button {
+  padding: 0 10px;
+}
+
+.group-editor-empty {
+  display: grid;
+  min-height: 54px;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+}
 .filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px;
+  grid-template-columns: minmax(0, 1fr) 150px;
   gap: 8px;
+}
+
+.sort-field {
+  position: relative;
+  min-width: 0;
+}
+
+.sort-field select {
+  padding-left: 34px;
+}
+
+.sort-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .library-section {
@@ -303,10 +448,26 @@ select {
   font-size: 12px;
 }
 
-.gif-actions .fav-active {
-  color: var(--warm);
-  border-color: var(--warm);
+.gif-actions .favorite-button {
+  display: grid;
+  min-width: 34px;
+  place-items: center;
+  padding: 0;
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 18px;
   font-weight: 800;
+  line-height: 1;
+}
+
+.gif-actions .favorite-button:hover {
+  border-color: var(--accent);
+}
+
+.gif-actions .favorite-button.fav-active {
+  border-color: var(--line);
+  background: var(--panel);
+  color: #f5b301;
 }
 
 .empty-state {
@@ -445,3 +606,24 @@ body.ui-inspecting {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+
+@media (max-width: 460px) {
+  .app-header {
+    align-items: start;
+  }
+
+  .header-actions {
+    grid-template-columns: 38px;
+  }
+
+  .brand-mark {
+    width: 32px;
+  }
+}
+
+
+
+
+
