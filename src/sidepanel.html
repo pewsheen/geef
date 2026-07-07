@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Geef</title>
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body data-ui="app-root">
+    <header class="app-header" data-ui="app-header">
+      <div class="brand" data-ui="brand">
+        <span class="brand-mark" data-ui="brand-mark">GIF</span>
+        <div data-ui="brand-copy">
+          <strong data-ui="app-title">Geef</strong>
+          <span id="storageInfo" data-ui="storage-info">Storage ready</span>
+        </div>
+      </div>
+      <button id="persistButton" class="icon-button" data-ui="persist-storage-button" type="button" title="Ask Chrome to keep GIF storage persistent">Pin</button>
+    </header>
+
+    <main class="app-shell" data-ui="app-shell">
+      <section class="toolbar" data-ui="import-toolbar" aria-label="Import tools">
+        <input id="gifInput" data-ui="gif-file-input" type="file" accept="image/gif" multiple hidden>
+        <input id="videoInput" data-ui="video-file-input" type="file" accept="video/mp4,video/webm,video/quicktime" hidden>
+
+        <button id="addGifButton" class="primary-button" data-ui="add-gif-button" type="button">Add GIF</button>
+        <button id="addVideoButton" class="secondary-button" data-ui="convert-video-button" type="button">MP4 to GIF</button>
+        <label class="group-field" data-ui="import-group-field">
+          <span data-ui="import-group-label">Group</span>
+          <input id="groupInput" data-ui="import-group-input" type="text" value="General" maxlength="32">
+        </label>
+      </section>
+
+      <div id="progress" class="progress" data-ui="conversion-progress" hidden>
+        <div class="progress-track" data-ui="conversion-progress-track"><span data-ui="conversion-progress-fill"></span></div>
+        <strong data-ui="conversion-progress-label">Converting</strong>
+      </div>
+
+      <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
+
+      <section class="filters" data-ui="library-filters" aria-label="Library filters">
+        <input id="searchInput" data-ui="search-input" type="search" placeholder="Search GIFs">
+        <select id="sortSelect" data-ui="sort-select" aria-label="Sort GIFs">
+          <option value="recent">Recently used</option>
+          <option value="created">Recently added</option>
+          <option value="name">Name</option>
+        </select>
+      </section>
+
+      <section id="favoritesSection" class="library-section" data-ui="favorites-section" hidden>
+        <div class="section-title" data-ui="favorites-section-title">
+          <h2 data-ui="favorites-heading">Favorites</h2>
+          <span id="favoriteCount" data-ui="favorites-count"></span>
+        </div>
+        <div id="favoriteGrid" class="gif-grid" data-ui="favorites-grid"></div>
+      </section>
+
+      <section class="library-section" data-ui="library-section">
+        <div class="section-title" data-ui="library-section-title">
+          <h2 id="libraryTitle" data-ui="library-heading">Library</h2>
+          <span id="libraryCount" data-ui="library-count"></span>
+        </div>
+        <div id="gifGrid" class="gif-grid" data-ui="library-grid"></div>
+        <div id="emptyState" class="empty-state" data-ui="empty-state" hidden>
+          <strong data-ui="empty-state-title">No GIFs yet</strong>
+          <span data-ui="empty-state-copy">Drop a GIF or MP4 here to start the wall.</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="status-bar" data-ui="status-bar">
+      <span id="statusText" data-ui="status-text">Ready</span>
+    </footer>
+
+    <dialog id="previewDialog" class="preview-dialog" data-ui="preview-dialog">
+      <form method="dialog" data-ui="preview-form">
+        <header data-ui="preview-header">
+          <strong data-ui="preview-title">GIF details</strong>
+          <button value="cancel" class="icon-button" data-ui="preview-close-button" type="submit" title="Close">X</button>
+        </header>
+
+        <img id="previewImage" data-ui="preview-image" alt="">
+
+        <label data-ui="preview-name-field">
+          <span data-ui="preview-name-label">Name</span>
+          <input id="previewTitle" data-ui="preview-name-input" type="text" maxlength="80">
+        </label>
+
+        <label data-ui="preview-group-field">
+          <span data-ui="preview-group-label">Group</span>
+          <input id="previewGroup" data-ui="preview-group-input" type="text" maxlength="32">
+        </label>
+
+        <label class="checkbox-row" data-ui="preview-favorite-field">
+          <input id="previewFavorite" data-ui="preview-favorite-input" type="checkbox">
+          <span data-ui="preview-favorite-label">Favorite</span>
+        </label>
+
+        <menu data-ui="preview-actions">
+          <button id="previewPaste" value="paste" data-ui="preview-paste-button" type="button">Paste</button>
+          <button id="previewSend" value="send" data-ui="preview-send-button" type="button">Send</button>
+          <button id="previewSave" value="save" data-ui="preview-save-button" type="button">Save</button>
+          <button id="previewRemove" value="remove" data-ui="preview-remove-button" class="danger-button" type="button">Remove</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
+
