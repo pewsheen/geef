@@ -17,8 +17,8 @@
       </div>
       <div class="header-actions" data-ui="header-actions">
 
-        <input id="fileInput" data-ui="media-file-input" type="file" accept="image/gif,video/mp4,video/webm,video/quicktime" multiple hidden>
-        <button id="addFileButton" class="icon-button add-file-button" data-ui="add-file-button" type="button" title="Add GIF or video">+</button>
+        <input id="fileInput" data-ui="media-file-input" type="file" accept="image/gif,video/mp4,video/webm,video/quicktime,.zip,application/zip,application/x-zip-compressed" multiple hidden>
+        <button id="addFileButton" class="icon-button add-file-button" data-ui="add-file-button" type="button" title="Add GIF, video, or group ZIP">+</button>
       </div>
     </header>
 
@@ -80,6 +80,11 @@
         <div class="group-editor-fixed" data-ui="reserved-groups">
           <span data-ui="reserved-group-all">All</span>
           <span data-ui="reserved-group-favorites">Favorites</span>
+        </div>
+
+        <div class="group-archive-row" data-ui="group-archive-row">
+          <input id="groupImportInput" data-ui="group-import-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+          <button id="groupImportButton" data-ui="group-import-button" type="button">Import ZIP</button>
         </div>
 
         <div id="groupList" class="group-list" data-ui="group-list"></div>

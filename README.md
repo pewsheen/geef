@@ -11,6 +11,7 @@ A Manifest V3 Chrome extension prototype for keeping a personal GIF wall in the 
 - Converts local MP4/WebM/QuickTime videos into animated GIFs in the browser.
 - Keeps a group bar at the top for browsing GIF groups.
 - Pins favorites above the main library.
+- Imports and exports whole GIF groups as ZIP archives with `metadata.json` plus the GIF files.
 - Orders GIFs by recently used by default, with recently added and name sort options.
 - Lets the user rename, regroup, favorite, paste/send, and remove GIFs.
 - Sends GIFs to the active tab by dispatching a paste event with a real `image/gif` File.

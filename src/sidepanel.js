@@ -2,7 +2,6 @@ import {
   blobToDataUrl,
   bytesToHuman,
   deleteGif,
-  estimateStorage,
   getGifBlob,
   listGifs,
   listGroups,
@@ -19,6 +18,7 @@ import { convertVideoToGif } from './gif-encoder.js';
 const ALL_GROUPS = '__all__';
 const FAVORITES_GROUP = '__favorites__';
 const FALLBACK_GROUP = 'General';
+const ZIP_SCHEMA = 'geef.group.v1';
 const RESERVED_GROUP_LABELS = new Set(['all', 'favorites']);
 const PREVIEW_MODE = new URLSearchParams(location.search).has('preview');
 
@@ -46,6 +46,8 @@ const el = {
   groupBar: document.querySelector('#groupBar'),
   groupDialog: document.querySelector('#groupDialog'),
   groupEditButton: document.querySelector('#groupEditButton'),
+  groupImportButton: document.querySelector('#groupImportButton'),
+  groupImportInput: document.querySelector('#groupImportInput'),
   groupList: document.querySelector('#groupList'),
   libraryCount: document.querySelector('#libraryCount'),
   libraryTitle: document.querySelector('#libraryTitle'),
@@ -81,6 +83,8 @@ function wireEvents() {
     event.preventDefault();
     addGroupFromDialog();
   });
+  el.groupImportButton.addEventListener('click', () => el.groupImportInput.click());
+  el.groupImportInput.addEventListener('change', () => importGroupZip(el.groupImportInput.files?.[0]));
   el.searchInput.addEventListener('input', () => {
     state.search = el.searchInput.value.trim().toLowerCase();
     render();
@@ -116,7 +120,6 @@ async function refresh() {
   }
 
   render();
-  updateStorageInfo();
 }
 
 function render() {
@@ -137,6 +140,7 @@ function render() {
 
   renderGrid(el.favoriteGrid, showPinnedFavorites ? favorites : []);
   renderGrid(el.gifGrid, library);
+  updateStorageInfo();
 }
 
 function renderGroupBar() {
@@ -236,22 +240,26 @@ function favoriteButton(gif) {
 }
 
 async function importMediaFiles(files) {
-  const mediaFiles = [...(files || [])].filter(isImportableMediaFile);
-  if (!mediaFiles.length) return;
+  const selectedFiles = [...(files || [])];
+  const archiveFiles = selectedFiles.filter(isGroupArchiveFile);
+  const mediaFiles = selectedFiles.filter(isImportableMediaFile);
+  if (!archiveFiles.length && !mediaFiles.length) return;
 
   let added = 0;
   let converted = 0;
+  let archiveCount = 0;
+  let archiveGifCount = 0;
 
   setBusy(true);
   try {
     for (const file of mediaFiles) {
-      if (file.type === 'image/gif') {
+      if (isGifFile(file)) {
         await saveImportedGif(file, file.name);
         added += 1;
         continue;
       }
 
-      if (file.type.startsWith('video/')) {
+      if (isVideoFile(file)) {
         setProgress(0);
         const gifBlob = await convertVideoToGif(file, {}, setProgress);
         await saveImportedGif(gifBlob, `${stripExtension(file.name)}.gif`);
@@ -260,13 +268,23 @@ async function importMediaFiles(files) {
       }
     }
 
+    for (const file of archiveFiles) {
+      const imported = await importGroupArchive(file);
+      archiveCount += 1;
+      archiveGifCount += imported.count;
+    }
+
+
     const parts = [];
     if (added) parts.push(`added ${added} GIF${added === 1 ? '' : 's'}`);
     if (converted) parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
+    if (archiveCount) {
+      parts.push(`imported ${archiveGifCount} GIF${archiveGifCount === 1 ? '' : 's'} from ${archiveCount} ZIP${archiveCount === 1 ? '' : 's'}`);
+    }
     setStatus(parts.length ? `Import complete: ${parts.join(', ')}.` : 'No supported files selected.');
     await refresh();
   } catch (error) {
-    setStatus(error.message);
+    setStatus(`Import failed: ${error.message}`);
   } finally {
     el.fileInput.value = '';
     setProgress(null);
@@ -275,7 +293,19 @@ async function importMediaFiles(files) {
 }
 
 function isImportableMediaFile(file) {
-  return file.type === 'image/gif' || file.type.startsWith('video/');
+  return isGifFile(file) || isVideoFile(file);
+}
+
+function isGifFile(file) {
+  return file.type === 'image/gif' || /\.gif$/i.test(file.name);
+}
+
+function isVideoFile(file) {
+  return file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+}
+
+function isGroupArchiveFile(file) {
+  return ['application/zip', 'application/x-zip-compressed'].includes(file.type) || /\.zip$/i.test(file.name);
 }
 
 async function saveImportedGif(blob, filename) {
@@ -296,7 +326,14 @@ async function saveImportedGif(blob, filename) {
     height: dimensions.height
   };
 
-  await saveGif(record, blob.slice(0, blob.size, 'image/gif'));
+  const gifBlob = blob.slice(0, blob.size, 'image/gif');
+  if (PREVIEW_MODE) {
+    state.previewBlobs.set(record.id, gifBlob);
+    state.gifs = [record, ...state.gifs];
+    state.groups = normalizeGroupList([...state.groups, record.group]);
+    return;
+  }
+  await saveGif(record, gifBlob);
 }
 
 async function openPreview(id) {
@@ -535,6 +572,13 @@ function createGroupEditorRow(group) {
     input.blur();
   });
 
+  const exportButton = document.createElement('button');
+  exportButton.type = 'button';
+  exportButton.dataset.ui = 'group-export-button';
+  exportButton.textContent = 'Export';
+  exportButton.title = `Export ${group} as ZIP`;
+  exportButton.addEventListener('click', () => exportEditableGroup(group));
+
   const removeButton = document.createElement('button');
   removeButton.type = 'button';
   removeButton.className = 'danger-button';
@@ -542,7 +586,7 @@ function createGroupEditorRow(group) {
   removeButton.textContent = 'Remove';
   removeButton.addEventListener('click', () => removeEditableGroup(group));
 
-  row.append(input, removeButton);
+  row.append(input, exportButton, removeButton);
   return row;
 }
 
@@ -616,6 +660,143 @@ async function removeEditableGroup(group) {
   render();
   renderGroupEditor();
   setStatus(`Removed group "${group}".`);
+}
+
+async function exportEditableGroup(group) {
+  const groupName = cleanGroup(group);
+  if (!validateEditableGroup(groupName)) return;
+
+  const gifs = state.gifs.filter((gif) => (gif.group || FALLBACK_GROUP) === groupName);
+  if (!gifs.length) {
+    setStatus(`Group "${groupName}" has no GIFs to export.`);
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const usedPaths = new Set();
+    const gifEntries = [];
+    const metadata = {
+      schema: ZIP_SCHEMA,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      groupName,
+      gifs: []
+    };
+
+    for (const gif of sortGifs(gifs)) {
+      const blob = await loadGifBlob(gif.id);
+      if (!blob) continue;
+
+      const filename = ensureGifFilename(gif.filename || `${gif.title || gif.id}.gif`);
+      const path = uniqueZipPath(`gifs/${safeZipSegment(filename)}`, usedPaths);
+      metadata.gifs.push({
+        title: gif.title || stripExtension(filename),
+        filename,
+        group: groupName,
+        favorite: Boolean(gif.favorite),
+        createdAt: gif.createdAt || 0,
+        updatedAt: gif.updatedAt || 0,
+        lastUsedAt: gif.lastUsedAt || 0,
+        useCount: gif.useCount || 0,
+        size: blob.size,
+        width: gif.width || 0,
+        height: gif.height || 0,
+        path
+      });
+      gifEntries.push({ name: path, blob: blob.slice(0, blob.size, blob.type || 'image/gif') });
+    }
+
+    if (!gifEntries.length) {
+      setStatus(`Could not read GIFs in "${groupName}".`);
+      return;
+    }
+
+    const zipBlob = await createZipBlob([
+      {
+        name: 'metadata.json',
+        blob: new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' })
+      },
+      ...gifEntries
+    ]);
+
+    downloadBlob(zipBlob, `${safeZipSegment(groupName)}-geef.zip`);
+    setStatus(`Exported "${groupName}" (${gifEntries.length} GIF${gifEntries.length === 1 ? '' : 's'}).`);
+  } catch (error) {
+    setStatus(`Export failed: ${error.message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function importGroupZip(file) {
+  if (!file) return;
+
+  setBusy(true);
+  try {
+    const imported = await importGroupArchive(file);
+    await refresh();
+    renderGroupEditor();
+    setStatus(`Imported "${imported.groupName}" (${imported.count} GIF${imported.count === 1 ? '' : 's'}).`);
+  } catch (error) {
+    setStatus(`Import failed: ${error.message}`);
+  } finally {
+    el.groupImportInput.value = '';
+    setBusy(false);
+  }
+}
+
+async function importGroupArchive(file) {
+  const entries = await readZipBlob(file);
+  const metadataBlob = findZipEntry(entries, 'metadata.json');
+  if (!metadataBlob) throw new Error('metadata.json is missing.');
+
+  const metadata = JSON.parse(await metadataBlob.text());
+  const gifs = Array.isArray(metadata.gifs) ? metadata.gifs : [];
+  if (!gifs.length) throw new Error('metadata.json has no GIF records.');
+
+  const groupName = importGroupName(metadata.groupName || stripExtension(file.name));
+  let importedCount = 0;
+
+  for (const item of gifs) {
+    const path = cleanZipLookupName(item.path || item.archivePath || `gifs/${item.filename || ''}`);
+    const entryBlob = findZipEntry(entries, path);
+    if (!entryBlob) continue;
+
+    const filename = ensureGifFilename(item.filename || zipBasename(path) || `${item.title || 'imported'}.gif`);
+    const gifBlob = entryBlob.slice(0, entryBlob.size, 'image/gif');
+    const dimensions = importDimensions(item);
+    const measuredDimensions = dimensions || await readImageSize(gifBlob).catch(() => ({ width: 0, height: 0 }));
+    const now = Date.now();
+    const record = {
+      id: makeId(),
+      title: cleanTitle(item.title || stripExtension(filename)),
+      filename,
+      group: groupName,
+      favorite: Boolean(item.favorite),
+      createdAt: validTimestamp(item.createdAt, now),
+      updatedAt: now,
+      lastUsedAt: validTimestamp(item.lastUsedAt, 0),
+      useCount: validCount(item.useCount),
+      size: gifBlob.size,
+      width: measuredDimensions.width,
+      height: measuredDimensions.height
+    };
+
+    if (PREVIEW_MODE) {
+      state.previewBlobs.set(record.id, gifBlob);
+      state.gifs = [record, ...state.gifs];
+    } else {
+      await saveGif(record, gifBlob);
+    }
+    importedCount += 1;
+  }
+
+  if (!importedCount) throw new Error('No GIF files from metadata could be found.');
+
+  state.activeGroup = groupName;
+  if (PREVIEW_MODE) state.groups = normalizeGroupList([...state.groups, groupName]);
+  return { groupName, count: importedCount };
 }
 
 function validateEditableGroup(group) {
@@ -766,10 +947,9 @@ function sortGifs(gifs) {
   return items.sort((a, b) => (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0));
 }
 
-async function updateStorageInfo() {
-  const estimate = await estimateStorage();
-  if (!estimate) return;
-  el.storageInfo.textContent = `${bytesToHuman(estimate.usage)} used`;
+function updateStorageInfo() {
+  const usage = state.gifs.reduce((total, gif) => total + Number(gif.size || 0), 0);
+  el.storageInfo.textContent = `${bytesToHuman(usage)} used`;
 }
 
 
@@ -842,6 +1022,282 @@ function readImageSize(blob) {
     };
     image.src = url;
   });
+}
+
+async function createZipBlob(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBytes = encodeText(entry.name);
+    const originalBytes = new Uint8Array(await entry.blob.arrayBuffer());
+    const compressedBytes = await deflateRaw(originalBytes);
+    const shouldCompress = compressedBytes && compressedBytes.length < originalBytes.length;
+    const dataBytes = shouldCompress ? compressedBytes : originalBytes;
+    const method = shouldCompress ? 8 : 0;
+    const crc = crc32(originalBytes);
+    const { dosDate, dosTime } = dateToDos(new Date());
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, method, true);
+    localView.setUint16(10, dosTime, true);
+    localView.setUint16(12, dosDate, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, dataBytes.length, true);
+    localView.setUint32(22, originalBytes.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, method, true);
+    centralView.setUint16(12, dosTime, true);
+    centralView.setUint16(14, dosDate, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, dataBytes.length, true);
+    centralView.setUint32(24, originalBytes.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    localParts.push(localHeader, dataBytes);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + dataBytes.length;
+  }
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true);
+  endView.setUint16(6, 0, true);
+  endView.setUint16(8, entries.length, true);
+  endView.setUint16(10, entries.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, centralOffset, true);
+  endView.setUint16(20, 0, true);
+
+  return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+}
+
+async function readZipBlob(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eocdOffset = findEndOfCentralDirectory(view);
+  const totalEntries = view.getUint16(eocdOffset + 10, true);
+  const centralOffset = view.getUint32(eocdOffset + 16, true);
+  const entries = new Map();
+  let offset = centralOffset;
+
+  for (let index = 0; index < totalEntries; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) throw new Error('ZIP central directory is invalid.');
+
+    const flags = view.getUint16(offset + 8, true);
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    const name = decodeZipName(bytes.slice(offset + 46, offset + 46 + nameLength), flags);
+
+    if (!name.endsWith('/')) {
+      if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('ZIP local file header is invalid.');
+
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+      let data;
+
+      if (method === 0) {
+        data = compressed;
+      } else if (method === 8) {
+        data = await inflateRaw(compressed);
+      } else {
+        throw new Error(`Unsupported ZIP compression method ${method}.`);
+      }
+
+      entries.set(cleanZipLookupName(name), new Blob([data], { type: mimeForZipName(name) }));
+    }
+
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+async function deflateRaw(bytes) {
+  if (typeof CompressionStream !== 'function') return null;
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+async function inflateRaw(bytes) {
+  if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot import compressed ZIP entries.');
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    throw new Error('Could not decompress ZIP entry.');
+  }
+}
+
+function findEndOfCentralDirectory(view) {
+  const lowerBound = Math.max(0, view.byteLength - 22 - 0xffff);
+  for (let offset = view.byteLength - 22; offset >= lowerBound; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) return offset;
+  }
+  throw new Error('Not a ZIP file.');
+}
+
+function crc32(bytes) {
+  let crc = -1;
+  for (const byte of bytes) {
+    crc = (crc >>> 8) ^ crc32Table()[(crc ^ byte) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+let cachedCrc32Table;
+function crc32Table() {
+  if (cachedCrc32Table) return cachedCrc32Table;
+
+  cachedCrc32Table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    cachedCrc32Table[index] = value >>> 0;
+  }
+  return cachedCrc32Table;
+}
+
+function dateToDos(date) {
+  const year = Math.max(1980, date.getFullYear());
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  return { dosDate, dosTime };
+}
+
+function encodeText(text) {
+  return new TextEncoder().encode(text);
+}
+
+function decodeZipName(bytes) {
+  return new TextDecoder().decode(bytes);
+}
+
+function findZipEntry(entries, name) {
+  const target = cleanZipLookupName(name).toLowerCase();
+  for (const [entryName, blob] of entries) {
+    if (entryName.toLowerCase() === target) return blob;
+  }
+  return null;
+}
+
+function cleanZipLookupName(name) {
+  return (name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function zipBasename(path) {
+  return cleanZipLookupName(path).split('/').filter(Boolean).pop() || '';
+}
+
+function mimeForZipName(name) {
+  if (/\.json$/i.test(name)) return 'application/json';
+  if (/\.gif$/i.test(name)) return 'image/gif';
+  return 'application/octet-stream';
+}
+
+function importGroupName(value) {
+  const group = cleanGroup((value || 'Imported').trim());
+  return isReservedGroupLabel(group) ? 'Imported' : group;
+}
+
+function importDimensions(item) {
+  const width = Number(item.width);
+  const height = Number(item.height);
+  return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+    ? { width, height }
+    : null;
+}
+
+function validTimestamp(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function validCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function cleanTitle(value) {
+  return (value || 'Untitled GIF').trim().slice(0, 80) || 'Untitled GIF';
+}
+
+function ensureGifFilename(filename) {
+  const safeName = safeZipSegment(filename || 'gif.gif');
+  return /\.gif$/i.test(safeName) ? safeName : `${stripExtension(safeName)}.gif`;
+}
+
+function safeZipSegment(value) {
+  return (value || 'group')
+    .trim()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80) || 'group';
+}
+
+function uniqueZipPath(path, usedPaths) {
+  const normalized = path.replace(/\\/g, '/');
+  const slash = normalized.lastIndexOf('/');
+  const prefix = slash >= 0 ? normalized.slice(0, slash + 1) : '';
+  const file = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  const dot = file.lastIndexOf('.');
+  const stem = dot > 0 ? file.slice(0, dot) : file;
+  const extension = dot > 0 ? file.slice(dot) : '';
+  let candidate = `${prefix}${file}`;
+  let index = 2;
+
+  while (usedPaths.has(candidate.toLowerCase())) {
+    candidate = `${prefix}${stem}-${index}${extension}`;
+    index += 1;
+  }
+
+  usedPaths.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function cssEscape(value) {
