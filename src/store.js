@@ -1,3 +1,5 @@
+import { pruneEmptyGroups } from './group-utils.mjs';
+
 const DB_NAME = 'geef';
 const DB_VERSION = 2;
 const GROUPS_KEY = 'groups';
@@ -103,9 +105,11 @@ export async function updateGif(id, patch) {
     const next = { ...current, ...patch, updatedAt: Date.now() };
     stores.gifs.put(next);
 
-    if (patch.group) {
+    if (patch.group && patch.group !== current.group) {
+      const records = await request(stores.gifs.getAll());
       const currentGroups = await request(stores.settings.get(GROUPS_KEY));
-      const groups = normalizeGroups([...(currentGroups?.value || []), patch.group]);
+      const nextRecords = records.map((gif) => (gif.id === id ? next : gif));
+      const groups = pruneEmptyGroups([...(currentGroups?.value || []), patch.group], nextRecords);
       stores.settings.put({ key: GROUPS_KEY, value: groups });
     }
 
@@ -131,9 +135,14 @@ export async function touchGif(id) {
 
 export async function deleteGif(id) {
   const db = await openDb();
-  await transaction(db, ['gifs', 'blobs'], 'readwrite', (stores) => {
+  await transaction(db, ['gifs', 'blobs', 'settings'], 'readwrite', async (stores) => {
+    const records = await request(stores.gifs.getAll());
+    const currentGroups = await request(stores.settings.get(GROUPS_KEY));
     stores.gifs.delete(id);
     stores.blobs.delete(id);
+
+    const groups = pruneEmptyGroups(currentGroups?.value || [], records.filter((gif) => gif.id !== id));
+    stores.settings.put({ key: GROUPS_KEY, value: groups });
   });
 }
 
@@ -239,4 +248,3 @@ function sortByFavoriteThenRecent(a, b) {
   if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
   return (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0);
 }
-

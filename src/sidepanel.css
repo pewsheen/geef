@@ -115,19 +115,6 @@ select {
   font-size: 11px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 36px;
-  height: 28px;
-  place-items: center;
-  border-radius: 7px;
-  background: var(--panel-strong);
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
 .icon-button {
   width: auto;
   min-width: 34px;
@@ -244,6 +231,24 @@ select {
   border-color: var(--accent);
   color: var(--accent-strong);
   font-weight: 700;
+}
+
+.group-bar .icon-filter-button {
+  display: grid;
+  width: 38px;
+  min-width: 38px;
+  place-items: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.group-bar .favorites-filter-button {
+  color: #f5b301;
+}
+
+.group-bar .favorites-filter-button[aria-pressed="true"] {
+  color: #f5b301;
 }
 
 
@@ -381,9 +386,15 @@ select {
   transform: translateY(-50%);
 }
 
+.section-list,
+.section-list-inner,
 .library-section {
   display: grid;
   gap: 8px;
+}
+
+.section-list-inner {
+  gap: 16px;
 }
 
 .section-title {
@@ -452,15 +463,47 @@ select {
 
 .gif-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 34px;
+  grid-template-columns: minmax(34px, 1fr) minmax(34px, 1fr) 34px;
   gap: 6px;
+  container-type: inline-size;
 }
 
 .gif-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   min-width: 0;
   min-height: 30px;
+  overflow: hidden;
   padding: 0 6px;
   font-size: 12px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gif-actions [data-ui="gif-card-paste-button"]::before,
+.gif-actions [data-ui="gif-card-send-button"]::before {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  line-height: 1;
+}
+
+.gif-actions [data-ui="gif-card-send-button"]::before {
+  mask: url("icons/send.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/send.svg") center / contain no-repeat;
+}
+
+.gif-actions [data-ui="gif-card-paste-button"]::before {
+  width: 17px;
+  height: 17px;
+  mask: url("icons/paste.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/paste.svg") center / contain no-repeat;
 }
 
 .gif-actions .favorite-button {
@@ -483,6 +526,21 @@ select {
   border-color: var(--line);
   background: var(--panel);
   color: #f5b301;
+}
+
+@container (max-width: 165px) {
+  .gif-actions [data-ui="gif-card-paste-button"],
+  .gif-actions [data-ui="gif-card-send-button"] {
+    gap: 0;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .gif-actions [data-ui="gif-card-paste-button"]::before,
+  .gif-actions [data-ui="gif-card-send-button"]::before {
+    width: 17px;
+    height: 17px;
+  }
 }
 
 .empty-state {
@@ -635,13 +693,5 @@ body.ui-inspecting {
   .header-actions {
     grid-template-columns: 38px;
   }
-
-  .brand-mark {
-    width: 32px;
-  }
 }
-
-
-
-
 

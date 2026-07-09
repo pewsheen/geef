@@ -14,10 +14,12 @@ import {
   updateGif
 } from './store.js';
 import { convertVideoToGif } from './gif-encoder.js';
+import { pruneEmptyGroups } from './group-utils.mjs';
 
 const ALL_GROUPS = '__all__';
 const FAVORITES_GROUP = '__favorites__';
 const FALLBACK_GROUP = 'General';
+const RECENT_LIMIT = 15;
 const ZIP_SCHEMA = 'geef.group.v1';
 const RESERVED_GROUP_LABELS = new Set(['all', 'favorites']);
 const PREVIEW_MODE = new URLSearchParams(location.search).has('preview');
@@ -36,10 +38,6 @@ const state = {
 const el = {
   addFileButton: document.querySelector('#addFileButton'),
   emptyState: document.querySelector('#emptyState'),
-  favoriteCount: document.querySelector('#favoriteCount'),
-  favoriteGrid: document.querySelector('#favoriteGrid'),
-  favoritesSection: document.querySelector('#favoritesSection'),
-  gifGrid: document.querySelector('#gifGrid'),
   fileInput: document.querySelector('#fileInput'),
   groupAddButton: document.querySelector('#groupAddButton'),
   groupAddInput: document.querySelector('#groupAddInput'),
@@ -49,8 +47,6 @@ const el = {
   groupImportButton: document.querySelector('#groupImportButton'),
   groupImportInput: document.querySelector('#groupImportInput'),
   groupList: document.querySelector('#groupList'),
-  libraryCount: document.querySelector('#libraryCount'),
-  libraryTitle: document.querySelector('#libraryTitle'),
   previewDialog: document.querySelector('#previewDialog'),
   previewFavorite: document.querySelector('#previewFavorite'),
   previewGroup: document.querySelector('#previewGroup'),
@@ -63,6 +59,7 @@ const el = {
   progress: document.querySelector('#progress'),
   progressBar: document.querySelector('#progress .progress-track span'),
   searchInput: document.querySelector('#searchInput'),
+  sectionList: document.querySelector('#sectionList'),
   sortSelect: document.querySelector('#sortSelect'),
   statusText: document.querySelector('#statusText'),
   storageInfo: document.querySelector('#storageInfo'),
@@ -119,44 +116,74 @@ async function refresh() {
     state.groups = await listGroups();
   }
 
+  ensureActiveGroupExists();
   render();
 }
 
 function render() {
   renderGroupBar();
 
-  const showingFavoritesGroup = state.activeGroup === FAVORITES_GROUP;
-  const scoped = filteredByGroup(state.gifs);
-  const searched = filterBySearch(scoped);
-  const favorites = sortGifs(searched.filter((gif) => gif.favorite));
-  const library = showingFavoritesGroup ? favorites : sortGifs(searched.filter((gif) => !gif.favorite));
-  const showPinnedFavorites = state.activeGroup === ALL_GROUPS && favorites.length > 0;
+  const sections = buildSections();
+  const visibleCount = sections.reduce((total, section) => total + section.gifs.length, 0);
 
-  el.favoritesSection.hidden = !showPinnedFavorites;
-  el.favoriteCount.textContent = countText(favorites.length);
-  el.libraryTitle.textContent = showingFavoritesGroup ? 'Favorites' : 'Library';
-  el.libraryCount.textContent = countText(library.length);
-  el.emptyState.hidden = state.gifs.length !== 0 || showPinnedFavorites || library.length !== 0;
-
-  renderGrid(el.favoriteGrid, showPinnedFavorites ? favorites : []);
-  renderGrid(el.gifGrid, library);
+  el.sectionList.replaceChildren(...sections.map(createLibrarySection));
+  el.emptyState.hidden = visibleCount !== 0 || state.gifs.length !== 0;
   updateStorageInfo();
+}
+
+function buildSections() {
+  if (state.activeGroup === ALL_GROUPS) return buildAllSections();
+
+  const searched = filterBySearch(filteredByGroup(state.gifs));
+  const title = state.activeGroup === FAVORITES_GROUP ? 'Favorites' : state.activeGroup;
+  const dataUi = state.activeGroup === FAVORITES_GROUP ? 'favorites-section' : 'group-section';
+  const group = state.activeGroup === FAVORITES_GROUP ? '' : state.activeGroup;
+  return sectionList([{ title, gifs: sortGifs(searched), dataUi, group }]);
+}
+
+function buildAllSections() {
+  const searched = filterBySearch(state.gifs);
+  const groups = editableGroups();
+  const sections = [
+    {
+      title: 'Recently',
+      gifs: sortGifsByRecent(searched).slice(0, RECENT_LIMIT),
+      dataUi: 'recently-section'
+    },
+    ...groups.map((group) => ({
+      title: group,
+      gifs: sortGifs(searched.filter((gif) => gifGroup(gif) === group)),
+      dataUi: 'group-section',
+      group
+    }))
+  ];
+
+  return sectionList(sections);
+}
+
+function sectionList(sections) {
+  return sections.filter((section) => section.gifs.length > 0);
 }
 
 function renderGroupBar() {
   const groups = editableGroups();
   const buttons = [
     { id: ALL_GROUPS, label: 'All' },
-    { id: FAVORITES_GROUP, label: 'Favorites' },
+    { id: FAVORITES_GROUP, label: 'Favorites', icon: '★' },
     ...groups.map((group) => ({ id: group, label: group }))
   ];
 
   el.groupBar.replaceChildren(...buttons.map((button) => {
     const node = document.createElement('button');
     node.type = 'button';
-    node.textContent = button.label;
+    node.textContent = button.icon || button.label;
     node.dataset.ui = 'group-filter';
     node.dataset.group = button.id;
+    if (button.icon) {
+      node.className = 'icon-filter-button favorites-filter-button';
+      node.title = button.label;
+      node.setAttribute('aria-label', button.label);
+    }
     node.setAttribute('aria-pressed', String(state.activeGroup === button.id));
     node.addEventListener('click', () => {
       state.activeGroup = button.id;
@@ -164,6 +191,34 @@ function renderGroupBar() {
     });
     return node;
   }));
+}
+
+function createLibrarySection(section) {
+  const sectionNode = document.createElement('section');
+  sectionNode.className = 'library-section';
+  sectionNode.dataset.ui = section.dataUi;
+  if (section.group) sectionNode.dataset.group = section.group;
+
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.dataset.ui = 'section-title';
+
+  const heading = document.createElement('h2');
+  heading.dataset.ui = 'section-heading';
+  heading.textContent = section.title;
+
+  const count = document.createElement('span');
+  count.dataset.ui = 'section-count';
+  count.textContent = countText(section.gifs.length);
+
+  const grid = document.createElement('div');
+  grid.className = 'gif-grid';
+  grid.dataset.ui = 'section-grid';
+
+  title.append(heading, count);
+  sectionNode.append(title, grid);
+  renderGrid(grid, section.gifs);
+  return sectionNode;
 }
 
 function renderGrid(container, gifs) {
@@ -219,6 +274,8 @@ function cardButton(label, onClick, className = '', dataUi = '') {
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = label;
+  button.title = label;
+  button.setAttribute('aria-label', label);
   if (dataUi) button.dataset.ui = dataUi;
   if (className) button.className = className;
   button.addEventListener('click', onClick);
@@ -353,10 +410,14 @@ async function openPreview(id) {
 async function savePreviewEdits() {
   if (!state.previewId) return;
   if (PREVIEW_MODE) {
+    const current = state.gifs.find((item) => item.id === state.previewId);
+    const group = contentGroupName(el.previewGroup.value);
     mutatePreviewGif(state.previewId, {
       title: el.previewTitle.value.trim() || 'Untitled GIF',
-      group: contentGroupName(el.previewGroup.value),
+      group,
       favorite: el.previewFavorite.checked
+    }, {
+      pruneGroups: Boolean(current && (current.group || FALLBACK_GROUP) !== group)
     });
     setStatus('Saved GIF details.');
     el.previewDialog.close();
@@ -393,6 +454,7 @@ async function removeGif(id) {
     state.gifs = state.gifs.filter((item) => item.id !== id);
     revokeObjectUrl(id);
     state.previewBlobs.delete(id);
+    prunePreviewGroups();
     el.previewDialog.close();
     setStatus('Removed GIF.');
     render();
@@ -831,12 +893,26 @@ async function loadGifBlob(id) {
   return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getGifBlob(id);
 }
 
-function mutatePreviewGif(id, patch) {
+function mutatePreviewGif(id, patch, options = {}) {
   state.gifs = state.gifs.map((gif) => {
     if (gif.id !== id) return gif;
     return { ...gif, ...patch, updatedAt: Date.now() };
   });
+  if (options.pruneGroups) prunePreviewGroups();
   render();
+}
+
+function prunePreviewGroups() {
+  state.groups = pruneEmptyGroups(state.groups, state.gifs, {
+    fallbackGroup: FALLBACK_GROUP,
+    reservedLabels: RESERVED_GROUP_LABELS
+  });
+  ensureActiveGroupExists();
+}
+
+function ensureActiveGroupExists() {
+  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP) return;
+  if (!editableGroups().includes(state.activeGroup)) state.activeGroup = ALL_GROUPS;
 }
 
 function createPreviewLibrary() {
@@ -944,7 +1020,11 @@ function sortGifs(gifs) {
   if (state.sort === 'created') {
     return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
-  return items.sort((a, b) => (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0));
+  return sortGifsByRecent(items);
+}
+
+function sortGifsByRecent(gifs) {
+  return [...gifs].sort((a, b) => (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0));
 }
 
 function updateStorageInfo() {
@@ -979,6 +1059,10 @@ function cleanGroup(value) {
 function contentGroupName(value) {
   const group = cleanGroup(value);
   return isReservedGroupLabel(group) ? FALLBACK_GROUP : group;
+}
+
+function gifGroup(gif) {
+  return gif.group || FALLBACK_GROUP;
 }
 
 function currentImportGroup() {
@@ -1303,9 +1387,6 @@ function downloadBlob(blob, filename) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
-
-
-
 
 
 

@@ -9,7 +9,6 @@
   <body data-ui="app-root">
     <header class="app-header" data-ui="app-header">
       <div class="brand" data-ui="brand">
-        <span class="brand-mark" data-ui="brand-mark">GIF</span>
         <div data-ui="brand-copy">
           <strong data-ui="app-title">Geef</strong>
           <span id="storageInfo" data-ui="storage-info">Storage ready</span>
@@ -45,20 +44,8 @@
         </div>
       </section>
 
-      <section id="favoritesSection" class="library-section" data-ui="favorites-section" hidden>
-        <div class="section-title" data-ui="favorites-section-title">
-          <h2 data-ui="favorites-heading">Favorites</h2>
-          <span id="favoriteCount" data-ui="favorites-count"></span>
-        </div>
-        <div id="favoriteGrid" class="gif-grid" data-ui="favorites-grid"></div>
-      </section>
-
-      <section class="library-section" data-ui="library-section">
-        <div class="section-title" data-ui="library-section-title">
-          <h2 id="libraryTitle" data-ui="library-heading">Library</h2>
-          <span id="libraryCount" data-ui="library-count"></span>
-        </div>
-        <div id="gifGrid" class="gif-grid" data-ui="library-grid"></div>
+      <section class="section-list" data-ui="section-list" aria-label="GIF library">
+        <div id="sectionList" class="section-list-inner" data-ui="section-list-inner"></div>
         <div id="emptyState" class="empty-state" data-ui="empty-state" hidden>
           <strong data-ui="empty-state-title">No GIFs yet</strong>
           <span data-ui="empty-state-copy">Drop a GIF or MP4 here to start the wall.</span>
@@ -132,6 +119,4 @@
     <script type="module" src="sidepanel.js"></script>
   </body>
 </html>
-
-
 
