@@ -486,7 +486,7 @@ select {
 }
 
 .gif-card:hover,
-.gif-card:focus-within {
+.gif-card:has(:focus-visible) {
   border-color: var(--accent);
 }
 
@@ -531,7 +531,7 @@ select {
 }
 
 .gif-card:hover .gif-actions,
-.gif-card:focus-within .gif-actions {
+.gif-card:has(:focus-visible) .gif-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
