@@ -98,6 +98,7 @@ function wireEvents() {
   el.previewSend.addEventListener('click', () => pasteGif(state.previewId, true));
   el.previewSave.addEventListener('click', savePreviewEdits);
   el.previewRemove.addEventListener('click', () => removeGif(state.previewId));
+  el.previewDialog.addEventListener('click', closePreviewFromBackdrop);
 
   document.addEventListener('dragover', (event) => {
     event.preventDefault();
@@ -435,6 +436,29 @@ async function openPreview(id) {
   el.previewGroup.value = gif.group || 'General';
   el.previewFavorite.checked = Boolean(gif.favorite);
   el.previewDialog.showModal();
+}
+
+function closePreviewFromBackdrop(event) {
+  if (event.button !== 0 || event.target !== el.previewDialog) return;
+  if (!isOutsideElement(event, el.previewDialog)) return;
+  el.previewDialog.close();
+  clearRestoredGifFocus();
+}
+
+function isOutsideElement(event, element) {
+  const rect = element.getBoundingClientRect();
+  return event.clientX < rect.left
+    || event.clientX > rect.right
+    || event.clientY < rect.top
+    || event.clientY > rect.bottom;
+}
+
+function clearRestoredGifFocus() {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (!active?.closest?.('[data-ui="gif-card"]')) return;
+    active.blur?.();
+  });
 }
 
 async function savePreviewEdits() {
@@ -1509,7 +1533,5 @@ function downloadBlob(blob, filename) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
-
-
 
 
