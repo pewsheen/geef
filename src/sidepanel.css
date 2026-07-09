@@ -520,9 +520,10 @@ select {
   position: absolute;
   top: 6px;
   right: 6px;
+  left: 6px;
   z-index: 2;
   display: flex;
-  gap: 5px;
+  justify-content: space-between;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-3px);
