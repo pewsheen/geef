@@ -121,6 +121,23 @@ select {
   padding: 0 10px;
 }
 
+.close-button {
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  place-items: center;
+  padding: 0;
+}
+
+.close-button::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: url("icons/close.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/close.svg") center / contain no-repeat;
+}
+
 .header-actions {
   display: grid;
   grid-template-columns: 38px;
@@ -215,14 +232,16 @@ select {
 
 .group-bar {
   display: flex;
+  min-height: 34px;
+  align-items: stretch;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .group-bar button {
   flex: 0 0 auto;
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 11px;
 }
 
@@ -266,7 +285,16 @@ select {
   place-items: center;
   padding: 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 0;
+}
+
+.group-edit-button::before {
+  content: "";
+  width: 17px;
+  height: 17px;
+  background: currentColor;
+  mask: url("icons/settings.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/settings.svg") center / contain no-repeat;
 }
 
 .group-edit-button:hover {
@@ -360,7 +388,7 @@ select {
 }
 .filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) 166px;
   gap: 8px;
 }
 
@@ -370,7 +398,31 @@ select {
 }
 
 .sort-field select {
+  appearance: none;
+  -webkit-appearance: none;
   padding-left: 34px;
+  padding-right: 34px;
+  text-align: center;
+  text-align-last: center;
+}
+
+.sort-field select option {
+  text-align: left;
+  text-align-last: left;
+}
+
+.sort-field::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  pointer-events: none;
+  transform: translateY(-65%) rotate(45deg);
 }
 
 .sort-icon {
@@ -415,131 +467,129 @@ select {
 }
 
 .gif-grid {
+  --gif-tile-min: 136px;
+
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gif-tile-min), 1fr));
+  gap: 8px;
 }
 
 .gif-card {
-  display: grid;
-  gap: 7px;
+  position: relative;
   min-width: 0;
-  padding: 8px;
+  overflow: hidden;
+  aspect-ratio: 1.28;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background: var(--panel-strong);
   box-shadow: 0 1px 0 rgba(22, 31, 44, 0.04);
 }
 
-.gif-card img {
-  width: 100%;
-  aspect-ratio: 1.28;
-  object-fit: cover;
-  border-radius: 6px;
-  background: var(--panel-strong);
-  cursor: zoom-in;
-}
-
-.gif-meta {
-  min-width: 0;
-}
-
-.gif-meta strong,
-.gif-meta span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gif-meta strong {
-  font-size: 12px;
-}
-
-.gif-meta span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.gif-actions {
-  display: grid;
-  grid-template-columns: minmax(34px, 1fr) minmax(34px, 1fr) 34px;
-  gap: 6px;
-  container-type: inline-size;
-}
-
-.gif-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  min-height: 30px;
-  overflow: hidden;
-  padding: 0 6px;
-  font-size: 12px;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gif-actions [data-ui="gif-card-paste-button"]::before,
-.gif-actions [data-ui="gif-card-send-button"]::before {
-  content: "";
-  display: block;
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  background: currentColor;
-  line-height: 1;
-}
-
-.gif-actions [data-ui="gif-card-send-button"]::before {
-  mask: url("icons/send.svg") center / contain no-repeat;
-  -webkit-mask: url("icons/send.svg") center / contain no-repeat;
-}
-
-.gif-actions [data-ui="gif-card-paste-button"]::before {
-  width: 17px;
-  height: 17px;
-  mask: url("icons/paste.svg") center / contain no-repeat;
-  -webkit-mask: url("icons/paste.svg") center / contain no-repeat;
-}
-
-.gif-actions .favorite-button {
-  display: grid;
-  min-width: 34px;
-  place-items: center;
-  padding: 0;
-  border-color: var(--line);
-  color: var(--muted);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.gif-actions .favorite-button:hover {
+.gif-card:hover,
+.gif-card:focus-within {
   border-color: var(--accent);
 }
 
+.gif-tile-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.gif-tile-button:hover {
+  border-color: transparent;
+}
+
+.gif-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--panel-strong);
+  cursor: pointer;
+}
+
+.gif-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.gif-card:hover .gif-actions,
+.gif-card:focus-within .gif-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.gif-actions button {
+  display: grid;
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  line-height: 1;
+  backdrop-filter: blur(8px);
+}
+
+.gif-actions button:hover {
+  border-color: var(--accent);
+}
+
+.gif-actions .favorite-button {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .gif-actions .favorite-button.fav-active {
-  border-color: var(--line);
-  background: var(--panel);
   color: #f5b301;
 }
 
-@container (max-width: 165px) {
-  .gif-actions [data-ui="gif-card-paste-button"],
-  .gif-actions [data-ui="gif-card-send-button"] {
-    gap: 0;
-    padding: 0;
-    font-size: 0;
-  }
+.gif-actions .edit-button {
+  font-size: 0;
+}
 
-  .gif-actions [data-ui="gif-card-paste-button"]::before,
-  .gif-actions [data-ui="gif-card-send-button"]::before {
-    width: 17px;
-    height: 17px;
+.gif-actions .edit-button::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: url("icons/edit.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/edit.svg") center / contain no-repeat;
+}
+
+@media (hover: none) {
+  .gif-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gif-actions {
+    transition: none;
   }
 }
 
@@ -574,6 +624,7 @@ select {
 
 .preview-dialog {
   width: min(420px, calc(100vw - 24px));
+  padding: 14px 18px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -588,11 +639,11 @@ select {
 .preview-dialog form {
   display: grid;
   gap: 12px;
+  min-width: 0;
   margin: 0;
 }
 
-.preview-dialog header,
-.preview-dialog menu {
+.preview-dialog header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -625,11 +676,42 @@ select {
 }
 
 .preview-dialog menu {
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
 }
 
 .preview-dialog menu button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
   padding: 0 12px;
+}
+
+.preview-dialog [data-ui="preview-paste-button"]::before,
+.preview-dialog [data-ui="preview-send-button"]::before {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+}
+
+.preview-dialog [data-ui="preview-paste-button"]::before {
+  width: 17px;
+  height: 17px;
+  mask: url("icons/paste.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/paste.svg") center / contain no-repeat;
+}
+
+.preview-dialog [data-ui="preview-send-button"]::before {
+  mask: url("icons/send.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/send.svg") center / contain no-repeat;
 }
 
 .danger-button {
@@ -694,4 +776,3 @@ body.ui-inspecting {
     grid-template-columns: 38px;
   }
 }
-

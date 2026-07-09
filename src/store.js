@@ -1,7 +1,7 @@
 import { pruneEmptyGroups } from './group-utils.mjs';
 
 const DB_NAME = 'geef';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const GROUPS_KEY = 'groups';
 
 let dbPromise;
@@ -84,11 +84,26 @@ export async function getGifBlob(id) {
   return row?.blob || null;
 }
 
-export async function saveGif(record, blob) {
+export async function getGifThumbnail(id) {
   const db = await openDb();
-  await transaction(db, ['gifs', 'blobs', 'settings'], 'readwrite', async (stores) => {
+  const row = await request(db.transaction('thumbnails', 'readonly').objectStore('thumbnails').get(id));
+  return row?.blob || null;
+}
+
+export async function saveGifThumbnail(id, blob) {
+  const db = await openDb();
+  await transaction(db, ['thumbnails'], 'readwrite', (stores) => {
+    stores.thumbnails.put({ id, blob });
+  });
+  return blob;
+}
+
+export async function saveGif(record, blob, thumbnailBlob = null) {
+  const db = await openDb();
+  await transaction(db, ['gifs', 'blobs', 'thumbnails', 'settings'], 'readwrite', async (stores) => {
     stores.gifs.put(record);
     stores.blobs.put({ id: record.id, blob });
+    if (thumbnailBlob) stores.thumbnails.put({ id: record.id, blob: thumbnailBlob });
 
     const current = await request(stores.settings.get(GROUPS_KEY));
     const groups = normalizeGroups([...(current?.value || []), record.group || 'General']);
@@ -135,11 +150,12 @@ export async function touchGif(id) {
 
 export async function deleteGif(id) {
   const db = await openDb();
-  await transaction(db, ['gifs', 'blobs', 'settings'], 'readwrite', async (stores) => {
+  await transaction(db, ['gifs', 'blobs', 'thumbnails', 'settings'], 'readwrite', async (stores) => {
     const records = await request(stores.gifs.getAll());
     const currentGroups = await request(stores.settings.get(GROUPS_KEY));
     stores.gifs.delete(id);
     stores.blobs.delete(id);
+    stores.thumbnails.delete(id);
 
     const groups = pruneEmptyGroups(currentGroups?.value || [], records.filter((gif) => gif.id !== id));
     stores.settings.put({ key: GROUPS_KEY, value: groups });
@@ -194,6 +210,10 @@ function openDb() {
 
       if (!db.objectStoreNames.contains('blobs')) {
         db.createObjectStore('blobs', { keyPath: 'id' });
+      }
+
+      if (!db.objectStoreNames.contains('thumbnails')) {
+        db.createObjectStore('thumbnails', { keyPath: 'id' });
       }
 
       if (!db.objectStoreNames.contains('settings')) {
