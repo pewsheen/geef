@@ -518,7 +518,7 @@ select {
 .grid-cell-preview-tile {
   display: grid;
   width: min(var(--mock-grid-cell-size, 110px), 100%);
-  aspect-ratio: 1;
+  aspect-ratio: 1.15;
   align-content: end;
   gap: 2px;
   padding: 8px;
