@@ -438,14 +438,18 @@ select {
 }
 
 .section-list,
-.section-list-inner,
-.library-section {
+.section-list-inner {
   display: grid;
   gap: 8px;
 }
 
 .section-list-inner {
   gap: 16px;
+}
+
+.library-section {
+  display: grid;
+  gap: 4px;
 }
 
 .section-title {
@@ -466,18 +470,18 @@ select {
 }
 
 .gif-grid {
-  --gif-tile-min: 136px;
+  --gif-tile-min: 110px;
 
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--gif-tile-min), 1fr));
-  gap: 8px;
+  gap: 4px;
 }
 
 .gif-card {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  aspect-ratio: 1.28;
+  aspect-ratio: 1.15;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-strong);
