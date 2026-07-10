@@ -28,6 +28,7 @@ const RECENT_LIMIT = 15;
 const ZIP_SCHEMA = 'geef.group.v1';
 const DEFAULT_GRID_CELL_MIN = '110px';
 const GRID_CELL_MIN_SETTING = 'gridCellMin';
+const SHOW_RECENTLY_SETTING = 'showRecently';
 const RESERVED_GROUP_LABELS = new Set(['all', 'favorites']);
 const PREVIEW_MODE = new URLSearchParams(location.search).has('preview');
 
@@ -44,6 +45,7 @@ const state = {
   activeGroup: ALL_GROUPS,
   search: '',
   gridCellMin: null,
+  showRecently: true,
   groups: [],
   settingsTab: 'appearance',
   previewId: null,
@@ -69,6 +71,7 @@ const el = {
   exportAllButton: document.querySelector('#exportAllButton'),
   gridCellMinInput: document.querySelector('#gridCellMinInput'),
   gridCellMinApplyButton: document.querySelector('#gridCellMinApplyButton'),
+  showRecentlyInput: document.querySelector('#showRecentlyInput'),
   gridCellPreviewTile: document.querySelector('#gridCellPreviewTile'),
   gridCellPreviewLabel: document.querySelector('#gridCellPreviewLabel'),
   groupPanel: document.querySelector('#groupPanel'),
@@ -133,6 +136,7 @@ function wireEvents() {
   el.gridCellMinInput.addEventListener('change', saveGridCellMin);
   el.gridCellMinInput.addEventListener('input', updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener('click', saveGridCellMin);
+  el.showRecentlyInput.addEventListener('change', saveShowRecently);
   el.settingsTabButtons.forEach((tab) =>
     tab.addEventListener('click', (event) => {
       if (suppressSettingsTabClick) {
@@ -203,6 +207,7 @@ async function refresh() {
     state.gridCellMin = normalizeGridCellMin(
       await getSetting(GRID_CELL_MIN_SETTING),
     );
+    state.showRecently = (await getSetting(SHOW_RECENTLY_SETTING)) !== false;
   }
 
   applyGridCellMin();
@@ -249,11 +254,15 @@ function buildAllSections() {
       gifs: sortGifs(searched.filter((gif) => gif.favorite)),
       dataUi: 'favorites-section',
     },
-    {
-      title: 'Recently',
-      gifs: sortGifsByRecent(searched).slice(0, RECENT_LIMIT),
-      dataUi: 'recently-section',
-    },
+    ...(state.showRecently
+      ? [
+          {
+            title: 'Recently',
+            gifs: sortGifsByRecent(searched).slice(0, RECENT_LIMIT),
+            dataUi: 'recently-section',
+          },
+        ]
+      : []),
     ...groups.map((group) => ({
       title: group,
       gifs: sortGifs(searched.filter((gif) => gifGroup(gif) === group)),
@@ -798,6 +807,7 @@ function openSettingsDialog() {
   renderSettingsEditor();
   el.groupAddInput.value = '';
   el.gridCellMinInput.value = state.gridCellMin || '';
+  el.showRecentlyInput.checked = state.showRecently;
   updateGridCellPreview();
   setSettingsTab('appearance');
   el.settingsDialog.showModal();
@@ -1072,6 +1082,13 @@ async function saveGridCellMin() {
       ? `Grid cell width set to ${nextValue}.`
       : `Grid cell width reset to ${DEFAULT_GRID_CELL_MIN}.`,
   );
+}
+
+async function saveShowRecently() {
+  state.showRecently = el.showRecentlyInput.checked;
+  if (!PREVIEW_MODE) await saveSetting(SHOW_RECENTLY_SETTING, state.showRecently);
+  render();
+  setStatus(state.showRecently ? 'Recently section shown.' : 'Recently section hidden.');
 }
 
 function normalizeGridCellMin(value) {

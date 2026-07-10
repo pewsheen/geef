@@ -511,6 +511,22 @@ select {
   color: var(--muted);
 }
 
+.setting-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.setting-checkbox input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .grid-cell-preview {
   display: grid;
   min-height: 132px;
