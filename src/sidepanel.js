@@ -449,14 +449,14 @@ function editButton(gif) {
 
 async function importMediaFiles(files) {
   const selectedFiles = [...(files || [])];
-  const archiveFiles = selectedFiles.filter(isGroupArchiveFile);
   const mediaFiles = selectedFiles.filter(isImportableMediaFile);
-  if (!archiveFiles.length && !mediaFiles.length) return;
+  if (!mediaFiles.length) {
+    setStatus('Choose a GIF or MP4 file.');
+    return;
+  }
 
   let added = 0;
   let converted = 0;
-  let archiveCount = 0;
-  let archiveGifCount = 0;
 
   setBusy(true);
   try {
@@ -476,21 +476,10 @@ async function importMediaFiles(files) {
       }
     }
 
-    for (const file of archiveFiles) {
-      const imported = await importGroupArchive(file);
-      archiveCount += 1;
-      archiveGifCount += imported.count;
-    }
-
     const parts = [];
     if (added) parts.push(`added ${added} GIF${added === 1 ? '' : 's'}`);
     if (converted)
       parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
-    if (archiveCount) {
-      parts.push(
-        `imported ${archiveGifCount} GIF${archiveGifCount === 1 ? '' : 's'} from ${archiveCount} ZIP${archiveCount === 1 ? '' : 's'}`,
-      );
-    }
     setStatus(
       parts.length
         ? `Import complete: ${parts.join(', ')}.`
@@ -515,14 +504,7 @@ function isGifFile(file) {
 }
 
 function isVideoFile(file) {
-  return file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
-}
-
-function isGroupArchiveFile(file) {
-  return (
-    ['application/zip', 'application/x-zip-compressed'].includes(file.type) ||
-    /\.zip$/i.test(file.name)
-  );
+  return file.type === 'video/mp4' || /\.mp4$/i.test(file.name);
 }
 
 async function saveImportedGif(blob, filename) {
