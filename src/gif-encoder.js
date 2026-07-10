@@ -4,10 +4,14 @@ const DEFAULT_OPTIONS = {
   maxWidth: 360,
   maxHeight: 280,
   paletteSize: 256,
-  dither: true
+  dither: true,
 };
 
-export async function convertVideoToGif(file, options = {}, onProgress = () => {}) {
+export async function convertVideoToGif(
+  file,
+  options = {},
+  onProgress = () => {},
+) {
   const settings = { ...DEFAULT_OPTIONS, ...options };
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
@@ -24,24 +28,35 @@ export async function convertVideoToGif(file, options = {}, onProgress = () => {
       throw new Error('Video duration could not be read.');
     }
 
-    const size = fitSize(video.videoWidth, video.videoHeight, settings.maxWidth, settings.maxHeight);
+    const size = fitSize(
+      video.videoWidth,
+      video.videoHeight,
+      settings.maxWidth,
+      settings.maxHeight,
+    );
     const canvas = document.createElement('canvas');
     canvas.width = size.width;
     canvas.height = size.height;
 
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    const frameCount = Math.max(1, Math.ceil(Math.min(video.duration, settings.maxSeconds) * settings.fps));
+    const frameCount = Math.max(
+      1,
+      Math.ceil(Math.min(video.duration, settings.maxSeconds) * settings.fps),
+    );
     const frames = [];
 
     for (let index = 0; index < frameCount; index += 1) {
-      const time = Math.min(index / settings.fps, Math.max(0, video.duration - 0.05));
+      const time = Math.min(
+        index / settings.fps,
+        Math.max(0, video.duration - 0.05),
+      );
       await seekVideo(video, time);
       context.drawImage(video, 0, 0, size.width, size.height);
 
       const imageData = context.getImageData(0, 0, size.width, size.height);
       frames.push({
         rgba: new Uint8ClampedArray(imageData.data),
-        delay: Math.max(2, Math.round(100 / settings.fps))
+        delay: Math.max(2, Math.round(100 / settings.fps)),
       });
 
       onProgress(((index + 1) / frameCount) * 0.75);
@@ -49,10 +64,16 @@ export async function convertVideoToGif(file, options = {}, onProgress = () => {
 
     const palette = buildAdaptivePalette(
       frames.map((frame) => frame.rgba),
-      settings.paletteSize
+      settings.paletteSize,
     );
     const indexedFrames = frames.map((frame, index) => {
-      const pixels = mapPixelsToPalette(frame.rgba, size.width, size.height, palette, settings.dither);
+      const pixels = mapPixelsToPalette(
+        frame.rgba,
+        size.width,
+        size.height,
+        palette,
+        settings.dither,
+      );
       onProgress(0.8 + ((index + 1) / frames.length) * 0.2);
       return { pixels, delay: frame.delay };
     });
@@ -68,7 +89,7 @@ function fitSize(width, height, maxWidth, maxHeight) {
   const scale = Math.min(1, maxWidth / width, maxHeight / height);
   return {
     width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale))
+    height: Math.max(1, Math.round(height * scale)),
   };
 }
 
@@ -168,7 +189,7 @@ function buildAdaptivePalette(frameRgbaList, maxColors) {
       count,
       redSum: redSums[key],
       greenSum: greenSums[key],
-      blueSum: blueSums[key]
+      blueSum: blueSums[key],
     });
   }
 
@@ -221,7 +242,7 @@ function makeColorBox(points) {
     count,
     rRange: rMax - rMin,
     gRange: gMax - gMin,
-    bRange: bMax - bMin
+    bRange: bMax - bMin,
   };
 }
 
@@ -249,7 +270,7 @@ function splitColorBox(box) {
 
   return [
     makeColorBox(sorted.slice(0, splitIndex)),
-    makeColorBox(sorted.slice(splitIndex))
+    makeColorBox(sorted.slice(splitIndex)),
   ];
 }
 
@@ -275,7 +296,7 @@ function colorFromBox(box) {
   return [
     clampByte(red / count),
     clampByte(green / count),
-    clampByte(blue / count)
+    clampByte(blue / count),
   ];
 }
 
@@ -290,7 +311,11 @@ function mapPixelsToPaletteFlat(rgba, palette) {
   const cache = new Int16Array(32768);
   cache.fill(-1);
 
-  for (let source = 0, target = 0; source < rgba.length; source += 4, target += 1) {
+  for (
+    let source = 0, target = 0;
+    source < rgba.length;
+    source += 4, target += 1
+  ) {
     const alpha = rgba[source + 3];
     const red = alpha ? rgba[source] : 255;
     const green = alpha ? rgba[source + 1] : 255;
@@ -316,14 +341,33 @@ function mapPixelsToPaletteWithDither(rgba, width, height, palette) {
       const source = pixel * 4;
       const errorIndex = (x + 1) * 3;
       const alpha = rgba[source + 3];
-      const red = clampByte((alpha ? rgba[source] : 255) + currentError[errorIndex]);
-      const green = clampByte((alpha ? rgba[source + 1] : 255) + currentError[errorIndex + 1]);
-      const blue = clampByte((alpha ? rgba[source + 2] : 255) + currentError[errorIndex + 2]);
-      const paletteIndex = nearestPaletteIndex(palette, cache, red, green, blue);
+      const red = clampByte(
+        (alpha ? rgba[source] : 255) + currentError[errorIndex],
+      );
+      const green = clampByte(
+        (alpha ? rgba[source + 1] : 255) + currentError[errorIndex + 1],
+      );
+      const blue = clampByte(
+        (alpha ? rgba[source + 2] : 255) + currentError[errorIndex + 2],
+      );
+      const paletteIndex = nearestPaletteIndex(
+        palette,
+        cache,
+        red,
+        green,
+        blue,
+      );
       const color = palette[paletteIndex];
 
       indices[pixel] = paletteIndex;
-      distributeError(currentError, nextError, x, red - color[0], green - color[1], blue - color[2]);
+      distributeError(
+        currentError,
+        nextError,
+        x,
+        red - color[0],
+        green - color[1],
+        blue - color[2],
+      );
     }
 
     const previous = currentError;
@@ -413,9 +457,25 @@ function writeGlobalPalette(out, palette) {
 
 function writeLoopExtension(out) {
   out.push(
-    0x21, 0xff, 0x0b,
-    0x4e, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2e, 0x30,
-    0x03, 0x01, 0x00, 0x00, 0x00
+    0x21,
+    0xff,
+    0x0b,
+    0x4e,
+    0x45,
+    0x54,
+    0x53,
+    0x43,
+    0x41,
+    0x50,
+    0x45,
+    0x32,
+    0x2e,
+    0x30,
+    0x03,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
   );
 }
 

@@ -1,4 +1,8 @@
-import { cleanGroupName, normalizeGroups, pruneEmptyGroups } from './group-utils.mjs';
+import {
+  cleanGroupName,
+  normalizeGroups,
+  pruneEmptyGroups,
+} from './group-utils.mjs';
 
 const DB_NAME = 'geef';
 const DB_VERSION = 3;
@@ -8,18 +12,24 @@ const GROUPS_KEY = 'groups';
 let dbPromise;
 
 export function makeId() {
-  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export async function listGifs() {
   const db = await openDb();
-  const records = await request(db.transaction('gifs', 'readonly').objectStore('gifs').getAll());
+  const records = await request(
+    db.transaction('gifs', 'readonly').objectStore('gifs').getAll(),
+  );
   return records.sort(sortByFavoriteThenRecent);
 }
 
 export async function listGroups() {
   const db = await openDb();
-  const settings = db.transaction('settings', 'readonly').objectStore('settings');
+  const settings = db
+    .transaction('settings', 'readonly')
+    .objectStore('settings');
   return readGroups(settings);
 }
 
@@ -29,39 +39,60 @@ export async function getLibraryUsage() {
   const [gifs, blobs, thumbnails] = await Promise.all([
     request(tx.objectStore('gifs').getAll()),
     request(tx.objectStore('blobs').getAll()),
-    request(tx.objectStore('thumbnails').getAll())
+    request(tx.objectStore('thumbnails').getAll()),
   ]);
-  const gifBytesById = new Map(blobs.map((item) => [item.id, item.blob?.size || 0]));
-  const thumbnailBytesById = new Map(thumbnails.map((item) => [item.id, item.blob?.size || 0]));
+  const gifBytesById = new Map(
+    blobs.map((item) => [item.id, item.blob?.size || 0]),
+  );
+  const thumbnailBytesById = new Map(
+    thumbnails.map((item) => [item.id, item.blob?.size || 0]),
+  );
   const groups = new Map();
 
   for (const gif of gifs) {
     const group = gif.group || DEFAULT_GROUP;
-    const usage = groups.get(group) || { group, gifBytes: 0, thumbnailBytes: 0, totalBytes: 0 };
+    const usage = groups.get(group) || {
+      group,
+      gifBytes: 0,
+      thumbnailBytes: 0,
+      totalBytes: 0,
+    };
     usage.gifBytes += gifBytesById.get(gif.id) || 0;
     usage.thumbnailBytes += thumbnailBytesById.get(gif.id) || 0;
     usage.totalBytes = usage.gifBytes + usage.thumbnailBytes;
     groups.set(group, usage);
   }
 
-  const gifBytes = [...gifBytesById.values()].reduce((total, bytes) => total + bytes, 0);
-  const thumbnailBytes = [...thumbnailBytesById.values()].reduce((total, bytes) => total + bytes, 0);
+  const gifBytes = [...gifBytesById.values()].reduce(
+    (total, bytes) => total + bytes,
+    0,
+  );
+  const thumbnailBytes = [...thumbnailBytesById.values()].reduce(
+    (total, bytes) => total + bytes,
+    0,
+  );
   return {
     gifBytes,
     thumbnailBytes,
     totalBytes: gifBytes + thumbnailBytes,
-    groups: [...groups.values()].sort((a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group))
+    groups: [...groups.values()].sort(
+      (a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group),
+    ),
   };
 }
 
 export async function saveGroups(groups) {
   const db = await openDb();
-  return transaction(db, ['settings'], 'readwrite', (stores) => writeGroups(stores.settings, groups));
+  return transaction(db, ['settings'], 'readwrite', (stores) =>
+    writeGroups(stores.settings, groups),
+  );
 }
 
 export async function getSetting(key) {
   const db = await openDb();
-  const row = await request(db.transaction('settings', 'readonly').objectStore('settings').get(key));
+  const row = await request(
+    db.transaction('settings', 'readonly').objectStore('settings').get(key),
+  );
   return row?.value ?? null;
 }
 
@@ -111,7 +142,9 @@ export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
       }
     }
 
-    const rawGroups = (await readGroups(stores.settings)).filter((group) => group !== target);
+    const rawGroups = (await readGroups(stores.settings)).filter(
+      (group) => group !== target,
+    );
     if (movedRecords) rawGroups.push(fallback);
     return writeGroups(stores.settings, rawGroups);
   });
@@ -119,13 +152,17 @@ export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
 
 export async function getGifBlob(id) {
   const db = await openDb();
-  const row = await request(db.transaction('blobs', 'readonly').objectStore('blobs').get(id));
+  const row = await request(
+    db.transaction('blobs', 'readonly').objectStore('blobs').get(id),
+  );
   return row?.blob || null;
 }
 
 export async function getGifThumbnail(id) {
   const db = await openDb();
-  const row = await request(db.transaction('thumbnails', 'readonly').objectStore('thumbnails').get(id));
+  const row = await request(
+    db.transaction('thumbnails', 'readonly').objectStore('thumbnails').get(id),
+  );
   return row?.blob || null;
 }
 
@@ -139,14 +176,20 @@ export async function saveGifThumbnail(id, blob) {
 
 export async function saveGif(record, blob, thumbnailBlob = null) {
   const db = await openDb();
-  await transaction(db, ['gifs', 'blobs', 'thumbnails', 'settings'], 'readwrite', async (stores) => {
-    stores.gifs.put(record);
-    stores.blobs.put({ id: record.id, blob });
-    if (thumbnailBlob) stores.thumbnails.put({ id: record.id, blob: thumbnailBlob });
+  await transaction(
+    db,
+    ['gifs', 'blobs', 'thumbnails', 'settings'],
+    'readwrite',
+    async (stores) => {
+      stores.gifs.put(record);
+      stores.blobs.put({ id: record.id, blob });
+      if (thumbnailBlob)
+        stores.thumbnails.put({ id: record.id, blob: thumbnailBlob });
 
-    const groups = await readGroups(stores.settings);
-    writeGroups(stores.settings, [...groups, record.group || DEFAULT_GROUP]);
-  });
+      const groups = await readGroups(stores.settings);
+      writeGroups(stores.settings, [...groups, record.group || DEFAULT_GROUP]);
+    },
+  );
   return record;
 }
 
@@ -162,7 +205,10 @@ export async function updateGif(id, patch) {
       const records = await request(stores.gifs.getAll());
       const currentGroups = await readGroups(stores.settings);
       const nextRecords = records.map((gif) => (gif.id === id ? next : gif));
-      writeGroups(stores.settings, pruneEmptyGroups([...currentGroups, patch.group], nextRecords));
+      writeGroups(
+        stores.settings,
+        pruneEmptyGroups([...currentGroups, patch.group], nextRecords),
+      );
     }
 
     return next;
@@ -179,7 +225,7 @@ export async function touchGif(id) {
       ...current,
       useCount: (current.useCount || 0) + 1,
       lastUsedAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
     stores.gifs.put(next);
     return next;
@@ -188,15 +234,26 @@ export async function touchGif(id) {
 
 export async function deleteGif(id) {
   const db = await openDb();
-  await transaction(db, ['gifs', 'blobs', 'thumbnails', 'settings'], 'readwrite', async (stores) => {
-    const records = await request(stores.gifs.getAll());
-    const currentGroups = await readGroups(stores.settings);
-    stores.gifs.delete(id);
-    stores.blobs.delete(id);
-    stores.thumbnails.delete(id);
+  await transaction(
+    db,
+    ['gifs', 'blobs', 'thumbnails', 'settings'],
+    'readwrite',
+    async (stores) => {
+      const records = await request(stores.gifs.getAll());
+      const currentGroups = await readGroups(stores.settings);
+      stores.gifs.delete(id);
+      stores.blobs.delete(id);
+      stores.thumbnails.delete(id);
 
-    writeGroups(stores.settings, pruneEmptyGroups(currentGroups, records.filter((gif) => gif.id !== id)));
-  });
+      writeGroups(
+        stores.settings,
+        pruneEmptyGroups(
+          currentGroups,
+          records.filter((gif) => gif.id !== id),
+        ),
+      );
+    },
+  );
 }
 
 export async function estimateStorage() {
@@ -204,7 +261,7 @@ export async function estimateStorage() {
   const estimate = await navigator.storage.estimate();
   return {
     usage: estimate.usage || 0,
-    quota: estimate.quota || 0
+    quota: estimate.quota || 0,
   };
 }
 
@@ -225,7 +282,10 @@ export function blobToDataUrl(blob) {
 export function bytesToHuman(bytes) {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
-  const order = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const order = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
   return `${(bytes / 1024 ** order).toFixed(order ? 1 : 0)} ${units[order]}`;
 }
 
@@ -286,13 +346,18 @@ function writeGroups(settings, groups) {
 function transaction(db, storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeNames, mode);
-    const stores = Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]));
+    const stores = Object.fromEntries(
+      storeNames.map((name) => [name, tx.objectStore(name)]),
+    );
     let callbackResult;
     let callbackError;
 
     tx.oncomplete = () => resolve(callbackResult);
     tx.onerror = () => reject(callbackError || tx.error);
-    tx.onabort = () => reject(callbackError || tx.error || new Error('IndexedDB transaction aborted'));
+    tx.onabort = () =>
+      reject(
+        callbackError || tx.error || new Error('IndexedDB transaction aborted'),
+      );
 
     Promise.resolve()
       .then(() => callback(stores))
@@ -308,5 +373,7 @@ function transaction(db, storeNames, mode, callback) {
 
 function sortByFavoriteThenRecent(a, b) {
   if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
-  return (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0);
+  return (
+    (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0)
+  );
 }

@@ -16,7 +16,7 @@ import {
   saveGroups,
   saveSetting,
   touchGif,
-  updateGif
+  updateGif,
 } from './store.js';
 import { convertVideoToGif } from './gif-encoder.js';
 import { pruneEmptyGroups } from './group-utils.mjs';
@@ -46,7 +46,7 @@ const state = {
   previewId: null,
   objectUrls: new Map(),
   thumbnailJobs: new Map(),
-  previewBlobs: new Map()
+  previewBlobs: new Map(),
 };
 
 const el = {
@@ -93,7 +93,7 @@ const el = {
   settingsTabsWrap: document.querySelector('.settings-tabs-wrap'),
   appearancePanel: document.querySelector('#appearancePanel'),
   statusText: document.querySelector('#statusText'),
-  storageInfo: document.querySelector('#storageInfo')
+  storageInfo: document.querySelector('#storageInfo'),
 };
 
 wireEvents();
@@ -102,7 +102,9 @@ refresh();
 
 function wireEvents() {
   el.addFileButton.addEventListener('click', () => el.fileInput.click());
-  el.fileInput.addEventListener('change', () => importMediaFiles(el.fileInput.files));
+  el.fileInput.addEventListener('change', () =>
+    importMediaFiles(el.fileInput.files),
+  );
   el.groupEditButton.addEventListener('click', openSettingsDialog);
   el.groupAddButton.addEventListener('click', addGroupFromDialog);
   el.groupAddInput.addEventListener('keydown', (event) => {
@@ -110,31 +112,45 @@ function wireEvents() {
     event.preventDefault();
     addGroupFromDialog();
   });
-  el.groupImportButton.addEventListener('click', () => el.groupImportInput.click());
-  el.groupImportInput.addEventListener('change', () => importGroupZip(el.groupImportInput.files?.[0]));
+  el.groupImportButton.addEventListener('click', () =>
+    el.groupImportInput.click(),
+  );
+  el.groupImportInput.addEventListener('change', () =>
+    importGroupZip(el.groupImportInput.files?.[0]),
+  );
   el.exportAllButton.addEventListener('click', exportAllGifs);
   el.gridCellMinInput.addEventListener('change', saveGridCellMin);
   el.gridCellMinInput.addEventListener('input', updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener('click', saveGridCellMin);
-  el.settingsTabButtons.forEach((tab) => tab.addEventListener('click', (event) => {
-    if (suppressSettingsTabClick) {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressSettingsTabClick = false;
-      return;
-    }
-    setSettingsTab(tab.dataset.settingsTab);
-  }));
-  el.settingsTabList.addEventListener('scroll', syncSettingsTabsOverflow, { passive: true });
-  el.settingsTabList.addEventListener('wheel', scrollSettingsTabsWithWheel, { passive: false });
+  el.settingsTabButtons.forEach((tab) =>
+    tab.addEventListener('click', (event) => {
+      if (suppressSettingsTabClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressSettingsTabClick = false;
+        return;
+      }
+      setSettingsTab(tab.dataset.settingsTab);
+    }),
+  );
+  el.settingsTabList.addEventListener('scroll', syncSettingsTabsOverflow, {
+    passive: true,
+  });
+  el.settingsTabList.addEventListener('wheel', scrollSettingsTabsWithWheel, {
+    passive: false,
+  });
   el.settingsTabList.addEventListener('pointerdown', startSettingsTabsDrag);
   el.settingsTabList.addEventListener('pointermove', dragSettingsTabs);
   el.settingsTabList.addEventListener('pointerup', endSettingsTabsDrag);
   el.settingsTabList.addEventListener('pointercancel', endSettingsTabsDrag);
   new ResizeObserver(syncSettingsTabsOverflow).observe(el.settingsTabList);
   requestAnimationFrame(syncSettingsTabsOverflow);
-  el.groupBar.addEventListener('scroll', syncGroupBarOverflow, { passive: true });
-  el.groupBar.addEventListener('wheel', scrollGroupBarWithWheel, { passive: false });
+  el.groupBar.addEventListener('scroll', syncGroupBarOverflow, {
+    passive: true,
+  });
+  el.groupBar.addEventListener('wheel', scrollGroupBarWithWheel, {
+    passive: false,
+  });
   el.groupBar.addEventListener('pointerdown', startGroupBarDrag);
   el.groupBar.addEventListener('pointermove', dragGroupBar);
   el.groupBar.addEventListener('pointerup', endGroupBarDrag);
@@ -145,8 +161,12 @@ function wireEvents() {
     render();
   });
 
-  el.previewPaste.addEventListener('click', () => pasteGif(state.previewId, false));
-  el.previewSend.addEventListener('click', () => pasteGif(state.previewId, true));
+  el.previewPaste.addEventListener('click', () =>
+    pasteGif(state.previewId, false),
+  );
+  el.previewSend.addEventListener('click', () =>
+    pasteGif(state.previewId, true),
+  );
   el.previewSave.addEventListener('click', savePreviewEdits);
   el.previewRemove.addEventListener('click', () => removeGif(state.previewId));
   el.previewDialog.addEventListener('click', closePreviewFromBackdrop);
@@ -169,7 +189,9 @@ async function refresh() {
   } else {
     state.gifs = await listGifs();
     state.groups = await listGroups();
-    state.gridCellMin = normalizeGridCellMin(await getSetting(GRID_CELL_MIN_SETTING));
+    state.gridCellMin = normalizeGridCellMin(
+      await getSetting(GRID_CELL_MIN_SETTING),
+    );
   }
 
   applyGridCellMin();
@@ -181,7 +203,10 @@ function render() {
   renderGroupBar();
 
   const sections = buildSections();
-  const visibleCount = sections.reduce((total, section) => total + section.gifs.length, 0);
+  const visibleCount = sections.reduce(
+    (total, section) => total + section.gifs.length,
+    0,
+  );
 
   el.sectionList.replaceChildren(...sections.map(createLibrarySection));
   el.emptyState.hidden = visibleCount !== 0 || state.gifs.length !== 0;
@@ -192,8 +217,12 @@ function buildSections() {
   if (state.activeGroup === ALL_GROUPS) return buildAllSections();
 
   const searched = filterBySearch(filteredByGroup(state.gifs));
-  const title = state.activeGroup === FAVORITES_GROUP ? 'Favorites' : state.activeGroup;
-  const dataUi = state.activeGroup === FAVORITES_GROUP ? 'favorites-section' : 'group-section';
+  const title =
+    state.activeGroup === FAVORITES_GROUP ? 'Favorites' : state.activeGroup;
+  const dataUi =
+    state.activeGroup === FAVORITES_GROUP
+      ? 'favorites-section'
+      : 'group-section';
   const group = state.activeGroup === FAVORITES_GROUP ? '' : state.activeGroup;
   return sectionList([{ title, gifs: sortGifs(searched), dataUi, group }]);
 }
@@ -205,19 +234,19 @@ function buildAllSections() {
     {
       title: 'Favorites',
       gifs: sortGifs(searched.filter((gif) => gif.favorite)),
-      dataUi: 'favorites-section'
+      dataUi: 'favorites-section',
     },
     {
       title: 'Recently',
       gifs: sortGifsByRecent(searched).slice(0, RECENT_LIMIT),
-      dataUi: 'recently-section'
+      dataUi: 'recently-section',
     },
     ...groups.map((group) => ({
       title: group,
       gifs: sortGifs(searched.filter((gif) => gifGroup(gif) === group)),
       dataUi: 'group-section',
-      group
-    }))
+      group,
+    })),
   ];
 
   return sectionList(sections);
@@ -232,32 +261,39 @@ function renderGroupBar() {
   const buttons = [
     { id: ALL_GROUPS, label: 'All' },
     { id: FAVORITES_GROUP, label: 'Favorites', icon: '★' },
-    ...groups.map((group) => ({ id: group, label: group }))
+    ...groups.map((group) => ({ id: group, label: group })),
   ];
 
-  el.groupBar.replaceChildren(...buttons.map((button) => {
-    const node = document.createElement('button');
-    node.type = 'button';
-    node.textContent = button.icon || button.label;
-    node.dataset.ui = 'group-filter';
-    node.dataset.group = button.id;
-    if (button.icon) {
-      node.className = 'icon-filter-button favorites-filter-button';
-      node.title = button.label;
-      node.setAttribute('aria-label', button.label);
-    }
-    node.setAttribute('aria-pressed', String(state.activeGroup === button.id));
-    node.addEventListener('click', () => {
-      if (suppressGroupBarClick) {
-        suppressGroupBarClick = false;
-        return;
+  el.groupBar.replaceChildren(
+    ...buttons.map((button) => {
+      const node = document.createElement('button');
+      node.type = 'button';
+      node.textContent = button.icon || button.label;
+      node.dataset.ui = 'group-filter';
+      node.dataset.group = button.id;
+      if (button.icon) {
+        node.className = 'icon-filter-button favorites-filter-button';
+        node.title = button.label;
+        node.setAttribute('aria-label', button.label);
       }
-      state.activeGroup = button.id;
-      render();
-    });
-    return node;
-  }));
-  el.groupBar.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      node.setAttribute(
+        'aria-pressed',
+        String(state.activeGroup === button.id),
+      );
+      node.addEventListener('click', () => {
+        if (suppressGroupBarClick) {
+          suppressGroupBarClick = false;
+          return;
+        }
+        state.activeGroup = button.id;
+        render();
+      });
+      return node;
+    }),
+  );
+  el.groupBar
+    .querySelector('[aria-pressed="true"]')
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   requestAnimationFrame(syncGroupBarOverflow);
 }
 
@@ -316,10 +352,7 @@ function createGifCard(gif) {
   const actions = document.createElement('div');
   actions.className = 'gif-actions';
   actions.dataset.ui = 'gif-card-actions';
-  actions.append(
-    favoriteButton(gif),
-    editButton(gif)
-  );
+  actions.append(favoriteButton(gif), editButton(gif));
 
   card.addEventListener('pointerenter', () => playGridGif(gif.id, img));
   card.addEventListener('pointerleave', () => pauseGridGif(img));
@@ -338,7 +371,9 @@ async function hydrateImages(container, gifs) {
     const image = card?.querySelector('img');
     if (!image) continue;
 
-    const blob = await loadGifThumbnail(gif.id).catch(() => loadGifBlob(gif.id));
+    const blob = await loadGifThumbnail(gif.id).catch(() =>
+      loadGifBlob(gif.id),
+    );
     if (!blob) continue;
     const url = objectUrlFor(gif.id, blob, 'thumbnail');
     image.src = url;
@@ -363,7 +398,7 @@ function favoriteButton(gif) {
     gif.favorite ? '★' : '☆',
     () => toggleFavorite(gif),
     `favorite-button${gif.favorite ? ' fav-active' : ''}`,
-    'gif-card-favorite-button'
+    'gif-card-favorite-button',
   );
   const action = gif.favorite ? 'Remove from favorites' : 'Add to favorites';
   button.dataset.favorite = String(gif.favorite);
@@ -377,7 +412,7 @@ function editButton(gif) {
     '',
     () => openPreview(gif.id),
     'edit-button',
-    'gif-card-edit-button'
+    'gif-card-edit-button',
   );
   button.title = 'Edit';
   button.setAttribute('aria-label', 'Edit');
@@ -421,11 +456,18 @@ async function importMediaFiles(files) {
 
     const parts = [];
     if (added) parts.push(`added ${added} GIF${added === 1 ? '' : 's'}`);
-    if (converted) parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
+    if (converted)
+      parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
     if (archiveCount) {
-      parts.push(`imported ${archiveGifCount} GIF${archiveGifCount === 1 ? '' : 's'} from ${archiveCount} ZIP${archiveCount === 1 ? '' : 's'}`);
+      parts.push(
+        `imported ${archiveGifCount} GIF${archiveGifCount === 1 ? '' : 's'} from ${archiveCount} ZIP${archiveCount === 1 ? '' : 's'}`,
+      );
     }
-    setStatus(parts.length ? `Import complete: ${parts.join(', ')}.` : 'No supported files selected.');
+    setStatus(
+      parts.length
+        ? `Import complete: ${parts.join(', ')}.`
+        : 'No supported files selected.',
+    );
     await refresh();
   } catch (error) {
     setStatus(`Import failed: ${error.message}`);
@@ -449,11 +491,17 @@ function isVideoFile(file) {
 }
 
 function isGroupArchiveFile(file) {
-  return ['application/zip', 'application/x-zip-compressed'].includes(file.type) || /\.zip$/i.test(file.name);
+  return (
+    ['application/zip', 'application/x-zip-compressed'].includes(file.type) ||
+    /\.zip$/i.test(file.name)
+  );
 }
 
 async function saveImportedGif(blob, filename) {
-  const dimensions = await readImageSize(blob).catch(() => ({ width: 0, height: 0 }));
+  const dimensions = await readImageSize(blob).catch(() => ({
+    width: 0,
+    height: 0,
+  }));
   const now = Date.now();
   const record = {
     id: makeId(),
@@ -467,7 +515,7 @@ async function saveImportedGif(blob, filename) {
     useCount: 0,
     size: blob.size,
     width: dimensions.width,
-    height: dimensions.height
+    height: dimensions.height,
   };
 
   const gifBlob = blob.slice(0, blob.size, 'image/gif');
@@ -477,7 +525,9 @@ async function saveImportedGif(blob, filename) {
     state.groups = normalizeGroupList([...state.groups, record.group]);
     return;
   }
-  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(() => null);
+  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
+    () => null,
+  );
   await saveGif(record, gifBlob, thumbnailBlob);
 }
 
@@ -504,10 +554,12 @@ function closePreviewFromBackdrop(event) {
 
 function isOutsideElement(event, element) {
   const rect = element.getBoundingClientRect();
-  return event.clientX < rect.left
-    || event.clientX > rect.right
-    || event.clientY < rect.top
-    || event.clientY > rect.bottom;
+  return (
+    event.clientX < rect.left ||
+    event.clientX > rect.right ||
+    event.clientY < rect.top ||
+    event.clientY > rect.bottom
+  );
 }
 
 function clearRestoredGifFocus() {
@@ -523,13 +575,19 @@ async function savePreviewEdits() {
   if (PREVIEW_MODE) {
     const current = state.gifs.find((item) => item.id === state.previewId);
     const group = contentGroupName(el.previewGroup.value);
-    mutatePreviewGif(state.previewId, {
-      title: el.previewTitle.value.trim() || 'Untitled GIF',
-      group,
-      favorite: el.previewFavorite.checked
-    }, {
-      pruneGroups: Boolean(current && (current.group || FALLBACK_GROUP) !== group)
-    });
+    mutatePreviewGif(
+      state.previewId,
+      {
+        title: el.previewTitle.value.trim() || 'Untitled GIF',
+        group,
+        favorite: el.previewFavorite.checked,
+      },
+      {
+        pruneGroups: Boolean(
+          current && (current.group || FALLBACK_GROUP) !== group,
+        ),
+      },
+    );
     setStatus('Saved GIF details.');
     el.previewDialog.close();
     return;
@@ -538,7 +596,7 @@ async function savePreviewEdits() {
   await updateGif(state.previewId, {
     title: el.previewTitle.value.trim() || 'Untitled GIF',
     group: contentGroupName(el.previewGroup.value),
-    favorite: el.previewFavorite.checked
+    favorite: el.previewFavorite.checked,
   });
   setStatus('Saved GIF details.');
   await refresh();
@@ -588,7 +646,7 @@ async function pasteGif(id, submit) {
   if (PREVIEW_MODE) {
     mutatePreviewGif(id, {
       useCount: (gif.useCount || 0) + 1,
-      lastUsedAt: Date.now()
+      lastUsedAt: Date.now(),
     });
     setStatus(submit ? 'Preview send simulated.' : 'Preview paste simulated.');
     return;
@@ -601,11 +659,17 @@ async function pasteGif(id, submit) {
       type: 'GEEF_INSERT_GIF',
       filename: gif.filename || `${gif.title}.gif`,
       dataUrl,
-      submit
+      submit,
     });
 
     await touchGif(id);
-    setStatus(result?.ok ? (submit ? 'Sent GIF.' : 'Pasted GIF.') : result?.reason || 'Could not paste GIF.');
+    setStatus(
+      result?.ok
+        ? submit
+          ? 'Sent GIF.'
+          : 'Pasted GIF.'
+        : result?.reason || 'Could not paste GIF.',
+    );
     await refresh();
   } catch (error) {
     setStatus(error.message);
@@ -638,33 +702,45 @@ function enableUiInspector() {
     active = !active;
     toggle.setAttribute('aria-pressed', String(active));
     document.body.classList.toggle('ui-inspecting', active);
-    setStatus(active ? 'UI inspect on: hover, then click an element target.' : 'UI inspect off.');
+    setStatus(
+      active
+        ? 'UI inspect on: hover, then click an element target.'
+        : 'UI inspect off.',
+    );
     if (!active) clearHighlight();
   });
 
-  document.addEventListener('mousemove', (event) => {
-    if (!active) return;
-    const target = closestInspectable(event.target, toggle, label);
-    if (!target) {
-      clearHighlight();
-      return;
-    }
+  document.addEventListener(
+    'mousemove',
+    (event) => {
+      if (!active) return;
+      const target = closestInspectable(event.target, toggle, label);
+      if (!target) {
+        clearHighlight();
+        return;
+      }
 
-    setHighlight(target);
-  }, true);
+      setHighlight(target);
+    },
+    true,
+  );
 
-  document.addEventListener('click', async (event) => {
-    if (!active) return;
-    const target = closestInspectable(event.target, toggle, label);
-    if (!target) return;
+  document.addEventListener(
+    'click',
+    async (event) => {
+      if (!active) return;
+      const target = closestInspectable(event.target, toggle, label);
+      if (!target) return;
 
-    event.preventDefault();
-    event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
 
-    const text = formatInspectTarget(target);
-    await navigator.clipboard?.writeText(text).catch(() => {});
-    setStatus(`Target copied: ${text}`);
-  }, true);
+      const text = formatInspectTarget(target);
+      await navigator.clipboard?.writeText(text).catch(() => {});
+      setStatus(`Target copied: ${text}`);
+    },
+    true,
+  );
 
   function setHighlight(target) {
     if (highlighted !== target) {
@@ -694,8 +770,10 @@ function closestInspectable(rawTarget, toggle, label) {
 
 function formatInspectTarget(element) {
   const parts = [`data-ui="${element.dataset.ui}"`];
-  if (element.dataset.group) parts.push(`data-group="${element.dataset.group}"`);
-  if (element.dataset.gifId) parts.push(`data-gif-id="${element.dataset.gifId}"`);
+  if (element.dataset.group)
+    parts.push(`data-group="${element.dataset.group}"`);
+  if (element.dataset.gifId)
+    parts.push(`data-gif-id="${element.dataset.gifId}"`);
   if (element.id) parts.push(`#${element.id}`);
   return parts.join(' ');
 }
@@ -703,7 +781,10 @@ function formatInspectTarget(element) {
 function positionInspectLabel(label, element) {
   const rect = element.getBoundingClientRect();
   const top = Math.max(8, Math.min(window.innerHeight - 38, rect.top - 30));
-  const left = Math.max(8, Math.min(window.innerWidth - label.offsetWidth - 8, rect.left));
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - label.offsetWidth - 8, rect.left),
+  );
   label.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
 
@@ -717,7 +798,9 @@ function openSettingsDialog() {
 }
 
 function setSettingsTab(tab) {
-  const nextTab = ['appearance', 'group', 'backup', 'data'].includes(tab) ? tab : 'appearance';
+  const nextTab = ['appearance', 'group', 'backup', 'data'].includes(tab)
+    ? tab
+    : 'appearance';
   state.settingsTab = nextTab;
   el.appearancePanel.hidden = nextTab !== 'appearance';
   el.groupPanel.hidden = nextTab !== 'group';
@@ -727,25 +810,37 @@ function setSettingsTab(tab) {
     const selected = button.dataset.settingsTab === nextTab;
     button.setAttribute('aria-selected', String(selected));
     button.tabIndex = selected ? 0 : -1;
-    if (selected) button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (selected)
+      button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
   requestAnimationFrame(syncSettingsTabsOverflow);
   if (nextTab === 'data') renderDataPanel();
 }
 
 function syncSettingsTabsOverflow() {
-  const maxScroll = el.settingsTabList.scrollWidth - el.settingsTabList.clientWidth;
+  const maxScroll =
+    el.settingsTabList.scrollWidth - el.settingsTabList.clientWidth;
   const fadeDistance = 28;
-  const leftFade = maxScroll > 1 ? Math.min(1, el.settingsTabList.scrollLeft / fadeDistance) : 0;
-  const rightFade = maxScroll > 1 ? Math.min(1, (maxScroll - el.settingsTabList.scrollLeft) / fadeDistance) : 0;
+  const leftFade =
+    maxScroll > 1
+      ? Math.min(1, el.settingsTabList.scrollLeft / fadeDistance)
+      : 0;
+  const rightFade =
+    maxScroll > 1
+      ? Math.min(1, (maxScroll - el.settingsTabList.scrollLeft) / fadeDistance)
+      : 0;
   el.settingsTabsWrap.style.setProperty('--left-tab-fade', String(leftFade));
   el.settingsTabsWrap.style.setProperty('--right-tab-fade', String(rightFade));
 }
 
 function scrollSettingsTabsWithWheel(event) {
-  const maxScroll = el.settingsTabList.scrollWidth - el.settingsTabList.clientWidth;
+  const maxScroll =
+    el.settingsTabList.scrollWidth - el.settingsTabList.clientWidth;
   if (maxScroll <= 1) return;
-  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  const delta =
+    Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
   if (!delta) return;
   event.preventDefault();
   el.settingsTabList.scrollLeft += delta;
@@ -758,12 +853,13 @@ function startSettingsTabsDrag(event) {
     startX: event.clientX,
     startScrollLeft: el.settingsTabList.scrollLeft,
     didDrag: false,
-    captured: false
+    captured: false,
   };
 }
 
 function dragSettingsTabs(event) {
-  if (!settingsTabsDrag || settingsTabsDrag.pointerId !== event.pointerId) return;
+  if (!settingsTabsDrag || settingsTabsDrag.pointerId !== event.pointerId)
+    return;
   const distance = event.clientX - settingsTabsDrag.startX;
   if (Math.abs(distance) > 3) settingsTabsDrag.didDrag = true;
   if (!settingsTabsDrag.didDrag) return;
@@ -777,7 +873,8 @@ function dragSettingsTabs(event) {
 }
 
 function endSettingsTabsDrag(event) {
-  if (!settingsTabsDrag || settingsTabsDrag.pointerId !== event.pointerId) return;
+  if (!settingsTabsDrag || settingsTabsDrag.pointerId !== event.pointerId)
+    return;
   const drag = settingsTabsDrag;
   const didDrag = drag.didDrag;
   settingsTabsDrag = null;
@@ -795,8 +892,12 @@ function endSettingsTabsDrag(event) {
 function syncGroupBarOverflow() {
   const maxScroll = el.groupBar.scrollWidth - el.groupBar.clientWidth;
   const fadeDistance = 24;
-  const leftFade = maxScroll > 1 ? Math.min(1, el.groupBar.scrollLeft / fadeDistance) : 0;
-  const rightFade = maxScroll > 1 ? Math.min(1, (maxScroll - el.groupBar.scrollLeft) / fadeDistance) : 0;
+  const leftFade =
+    maxScroll > 1 ? Math.min(1, el.groupBar.scrollLeft / fadeDistance) : 0;
+  const rightFade =
+    maxScroll > 1
+      ? Math.min(1, (maxScroll - el.groupBar.scrollLeft) / fadeDistance)
+      : 0;
   el.groupBarWrap.style.setProperty('--left-group-fade', String(leftFade));
   el.groupBarWrap.style.setProperty('--right-group-fade', String(rightFade));
 }
@@ -804,7 +905,10 @@ function syncGroupBarOverflow() {
 function scrollGroupBarWithWheel(event) {
   const maxScroll = el.groupBar.scrollWidth - el.groupBar.clientWidth;
   if (maxScroll <= 1) return;
-  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  const delta =
+    Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
   if (!delta) return;
   event.preventDefault();
   el.groupBar.scrollLeft += delta;
@@ -817,7 +921,7 @@ function startGroupBarDrag(event) {
     startX: event.clientX,
     startScrollLeft: el.groupBar.scrollLeft,
     didDrag: false,
-    captured: false
+    captured: false,
   };
 }
 
@@ -865,21 +969,23 @@ async function renderDataPanel() {
     return;
   }
 
-  el.dataGroupUsageList.replaceChildren(...usage.groups.map((group) => {
-    const row = document.createElement('div');
-    row.className = 'data-group-row';
-    row.dataset.ui = 'data-group-row';
-    row.dataset.group = group.group;
+  el.dataGroupUsageList.replaceChildren(
+    ...usage.groups.map((group) => {
+      const row = document.createElement('div');
+      row.className = 'data-group-row';
+      row.dataset.ui = 'data-group-row';
+      row.dataset.group = group.group;
 
-    const name = document.createElement('strong');
-    name.textContent = group.group;
-    const total = document.createElement('strong');
-    total.textContent = bytesToHuman(group.totalBytes);
-    const detail = document.createElement('span');
-    detail.textContent = `GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
-    row.append(name, total, detail);
-    return row;
-  }));
+      const name = document.createElement('strong');
+      name.textContent = group.group;
+      const total = document.createElement('strong');
+      total.textContent = bytesToHuman(group.totalBytes);
+      const detail = document.createElement('span');
+      detail.textContent = `GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
+      row.append(name, total, detail);
+      return row;
+    }),
+  );
 }
 
 function previewLibraryUsage() {
@@ -889,7 +995,12 @@ function previewLibraryUsage() {
   for (const gif of state.gifs) {
     const bytes = state.previewBlobs.get(gif.id)?.size || gif.size || 0;
     const group = gif.group || FALLBACK_GROUP;
-    const usage = groups.get(group) || { group, gifBytes: 0, thumbnailBytes: 0, totalBytes: 0 };
+    const usage = groups.get(group) || {
+      group,
+      gifBytes: 0,
+      thumbnailBytes: 0,
+      totalBytes: 0,
+    };
     usage.gifBytes += bytes;
     usage.totalBytes = usage.gifBytes;
     groups.set(group, usage);
@@ -900,7 +1011,9 @@ function previewLibraryUsage() {
     gifBytes,
     thumbnailBytes: 0,
     totalBytes: gifBytes,
-    groups: [...groups.values()].sort((a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group))
+    groups: [...groups.values()].sort(
+      (a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group),
+    ),
   };
 }
 
@@ -916,24 +1029,39 @@ async function saveGridCellMin() {
   state.gridCellMin = nextValue;
   applyGridCellMin();
   if (!PREVIEW_MODE) await saveSetting(GRID_CELL_MIN_SETTING, nextValue);
-  setStatus(nextValue ? `Grid cell width set to ${nextValue}.` : `Grid cell width reset to ${DEFAULT_GRID_CELL_MIN}.`);
+  setStatus(
+    nextValue
+      ? `Grid cell width set to ${nextValue}.`
+      : `Grid cell width reset to ${DEFAULT_GRID_CELL_MIN}.`,
+  );
 }
 
 function normalizeGridCellMin(value) {
-  const match = String(value || '').trim().match(/^(\d{2,3})(?:px)?$/i);
+  const match = String(value || '')
+    .trim()
+    .match(/^(\d{2,3})(?:px)?$/i);
   if (!match) return null;
   const pixels = Number(match[1]);
   return pixels >= 80 && pixels <= 320 ? `${pixels}px` : null;
 }
 
 function applyGridCellMin() {
-  document.documentElement.style.setProperty('--gif-tile-min', state.gridCellMin || DEFAULT_GRID_CELL_MIN);
+  document.documentElement.style.setProperty(
+    '--gif-tile-min',
+    state.gridCellMin || DEFAULT_GRID_CELL_MIN,
+  );
   updateGridCellPreview();
 }
 
 function updateGridCellPreview() {
-  const previewSize = normalizeGridCellMin(el.gridCellMinInput.value) || state.gridCellMin || DEFAULT_GRID_CELL_MIN;
-  el.gridCellPreviewTile.style.setProperty('--mock-grid-cell-size', previewSize);
+  const previewSize =
+    normalizeGridCellMin(el.gridCellMinInput.value) ||
+    state.gridCellMin ||
+    DEFAULT_GRID_CELL_MIN;
+  el.gridCellPreviewTile.style.setProperty(
+    '--mock-grid-cell-size',
+    previewSize,
+  );
   el.gridCellPreviewLabel.textContent = previewSize;
 }
 
@@ -964,7 +1092,9 @@ function createSettingsEditorRow(group) {
   input.maxLength = 32;
   input.value = group;
   input.dataset.ui = 'group-rename-input';
-  input.addEventListener('change', () => renameEditableGroup(group, input.value));
+  input.addEventListener('change', () =>
+    renameEditableGroup(group, input.value),
+  );
   input.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
@@ -992,16 +1122,18 @@ function renderGroupExportList(groups = editableGroups()) {
     return;
   }
 
-  el.groupExportList.replaceChildren(...groups.map((group) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.dataset.ui = 'group-export-button';
-    button.dataset.group = group;
-    button.textContent = group;
-    button.title = `Export ${group} as ZIP`;
-    button.addEventListener('click', () => exportEditableGroup(group));
-    return button;
-  }));
+  el.groupExportList.replaceChildren(
+    ...groups.map((group) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.ui = 'group-export-button';
+      button.dataset.group = group;
+      button.textContent = group;
+      button.title = `Export ${group} as ZIP`;
+      button.addEventListener('click', () => exportEditableGroup(group));
+      return button;
+    }),
+  );
 }
 
 async function addGroupFromDialog() {
@@ -1032,17 +1164,23 @@ async function renameEditableGroup(oldGroup, rawNewGroup) {
     renderSettingsEditor();
     return;
   }
-  if (editableGroups().some((group) => group !== oldGroup && group === nextGroup)) {
+  if (
+    editableGroups().some((group) => group !== oldGroup && group === nextGroup)
+  ) {
     setStatus(`Group "${nextGroup}" already exists.`);
     renderSettingsEditor();
     return;
   }
 
   if (PREVIEW_MODE) {
-    state.groups = normalizeGroupList(state.groups.map((group) => group === oldGroup ? nextGroup : group));
-    state.gifs = state.gifs.map((gif) => (gif.group || FALLBACK_GROUP) === oldGroup
-      ? { ...gif, group: nextGroup, updatedAt: Date.now() }
-      : gif);
+    state.groups = normalizeGroupList(
+      state.groups.map((group) => (group === oldGroup ? nextGroup : group)),
+    );
+    state.gifs = state.gifs.map((gif) =>
+      (gif.group || FALLBACK_GROUP) === oldGroup
+        ? { ...gif, group: nextGroup, updatedAt: Date.now() }
+        : gif,
+    );
   } else {
     await renameGroup(oldGroup, nextGroup);
     state.gifs = await listGifs();
@@ -1056,14 +1194,20 @@ async function renameEditableGroup(oldGroup, rawNewGroup) {
 }
 
 async function removeEditableGroup(group) {
-  const ok = confirm(`Remove "${group}"? GIFs in this group will move to ${FALLBACK_GROUP}.`);
+  const ok = confirm(
+    `Remove "${group}"? GIFs in this group will move to ${FALLBACK_GROUP}.`,
+  );
   if (!ok) return;
 
   if (PREVIEW_MODE) {
-    state.groups = normalizeGroupList(state.groups.filter((item) => item !== group));
-    state.gifs = state.gifs.map((gif) => (gif.group || FALLBACK_GROUP) === group
-      ? { ...gif, group: FALLBACK_GROUP, updatedAt: Date.now() }
-      : gif);
+    state.groups = normalizeGroupList(
+      state.groups.filter((item) => item !== group),
+    );
+    state.gifs = state.gifs.map((gif) =>
+      (gif.group || FALLBACK_GROUP) === group
+        ? { ...gif, group: FALLBACK_GROUP, updatedAt: Date.now() }
+        : gif,
+    );
   } else {
     await removeGroup(group, FALLBACK_GROUP);
     state.gifs = await listGifs();
@@ -1080,7 +1224,9 @@ async function exportEditableGroup(group) {
   const groupName = cleanGroup(group);
   if (!validateEditableGroup(groupName)) return;
 
-  const gifs = state.gifs.filter((gif) => (gif.group || FALLBACK_GROUP) === groupName);
+  const gifs = state.gifs.filter(
+    (gif) => (gif.group || FALLBACK_GROUP) === groupName,
+  );
   if (!gifs.length) {
     setStatus(`Group "${groupName}" has no GIFs to export.`);
     return;
@@ -1095,14 +1241,16 @@ async function exportEditableGroup(group) {
       version: 1,
       exportedAt: new Date().toISOString(),
       groupName,
-      gifs: []
+      gifs: [],
     };
 
     for (const gif of sortGifs(gifs)) {
       const blob = await loadGifBlob(gif.id);
       if (!blob) continue;
 
-      const filename = ensureGifFilename(gif.filename || `${gif.title || gif.id}.gif`);
+      const filename = ensureGifFilename(
+        gif.filename || `${gif.title || gif.id}.gif`,
+      );
       const path = uniqueZipPath(`gifs/${safeZipSegment(filename)}`, usedPaths);
       metadata.gifs.push({
         title: gif.title || stripExtension(filename),
@@ -1116,9 +1264,12 @@ async function exportEditableGroup(group) {
         size: blob.size,
         width: gif.width || 0,
         height: gif.height || 0,
-        path
+        path,
       });
-      gifEntries.push({ name: path, blob: blob.slice(0, blob.size, blob.type || 'image/gif') });
+      gifEntries.push({
+        name: path,
+        blob: blob.slice(0, blob.size, blob.type || 'image/gif'),
+      });
     }
 
     if (!gifEntries.length) {
@@ -1129,13 +1280,17 @@ async function exportEditableGroup(group) {
     const zipBlob = await createZipBlob([
       {
         name: 'metadata.json',
-        blob: new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' })
+        blob: new Blob([JSON.stringify(metadata, null, 2)], {
+          type: 'application/json',
+        }),
       },
-      ...gifEntries
+      ...gifEntries,
     ]);
 
     downloadBlob(zipBlob, `${safeZipSegment(groupName)}-geef.zip`);
-    setStatus(`Exported "${groupName}" (${gifEntries.length} GIF${gifEntries.length === 1 ? '' : 's'}).`);
+    setStatus(
+      `Exported "${groupName}" (${gifEntries.length} GIF${gifEntries.length === 1 ? '' : 's'}).`,
+    );
   } catch (error) {
     setStatus(`Export failed: ${error.message}`);
   } finally {
@@ -1158,14 +1313,16 @@ async function exportAllGifs() {
       version: 1,
       scope: 'library',
       exportedAt: new Date().toISOString(),
-      gifs: []
+      gifs: [],
     };
 
     for (const gif of sortGifs(state.gifs)) {
       const blob = await loadGifBlob(gif.id);
       if (!blob) continue;
 
-      const filename = ensureGifFilename(gif.filename || `${gif.title || gif.id}.gif`);
+      const filename = ensureGifFilename(
+        gif.filename || `${gif.title || gif.id}.gif`,
+      );
       const path = uniqueZipPath(`gifs/${safeZipSegment(filename)}`, usedPaths);
       metadata.gifs.push({
         title: gif.title || stripExtension(filename),
@@ -1179,9 +1336,12 @@ async function exportAllGifs() {
         size: blob.size,
         width: gif.width || 0,
         height: gif.height || 0,
-        path
+        path,
       });
-      gifEntries.push({ name: path, blob: blob.slice(0, blob.size, blob.type || 'image/gif') });
+      gifEntries.push({
+        name: path,
+        blob: blob.slice(0, blob.size, blob.type || 'image/gif'),
+      });
     }
 
     if (!gifEntries.length) {
@@ -1192,13 +1352,17 @@ async function exportAllGifs() {
     const zipBlob = await createZipBlob([
       {
         name: 'metadata.json',
-        blob: new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' })
+        blob: new Blob([JSON.stringify(metadata, null, 2)], {
+          type: 'application/json',
+        }),
       },
-      ...gifEntries
+      ...gifEntries,
     ]);
 
     downloadBlob(zipBlob, 'geef-backup.zip');
-    setStatus(`Exported backup (${gifEntries.length} GIF${gifEntries.length === 1 ? '' : 's'}).`);
+    setStatus(
+      `Exported backup (${gifEntries.length} GIF${gifEntries.length === 1 ? '' : 's'}).`,
+    );
   } catch (error) {
     setStatus(`Export failed: ${error.message}`);
   } finally {
@@ -1214,7 +1378,9 @@ async function importGroupZip(file) {
     const imported = await importGroupArchive(file);
     await refresh();
     renderSettingsEditor();
-    setStatus(`Imported "${imported.groupName}" (${imported.count} GIF${imported.count === 1 ? '' : 's'}).`);
+    setStatus(
+      `Imported "${imported.groupName}" (${imported.count} GIF${imported.count === 1 ? '' : 's'}).`,
+    );
   } catch (error) {
     setStatus(`Import failed: ${error.message}`);
   } finally {
@@ -1233,21 +1399,31 @@ async function importGroupArchive(file) {
   if (!gifs.length) throw new Error('metadata.json has no GIF records.');
 
   const isLibraryBackup = metadata.scope === 'library';
-  const groupName = importGroupName(metadata.groupName || stripExtension(file.name));
+  const groupName = importGroupName(
+    metadata.groupName || stripExtension(file.name),
+  );
   const importedGroups = new Set();
   let importedCount = 0;
 
   for (const item of gifs) {
-    const path = cleanZipLookupName(item.path || item.archivePath || `gifs/${item.filename || ''}`);
+    const path = cleanZipLookupName(
+      item.path || item.archivePath || `gifs/${item.filename || ''}`,
+    );
     const entryBlob = findZipEntry(entries, path);
     if (!entryBlob) continue;
 
-    const filename = ensureGifFilename(item.filename || zipBasename(path) || `${item.title || 'imported'}.gif`);
+    const filename = ensureGifFilename(
+      item.filename || zipBasename(path) || `${item.title || 'imported'}.gif`,
+    );
     const gifBlob = entryBlob.slice(0, entryBlob.size, 'image/gif');
     const dimensions = importDimensions(item);
-    const measuredDimensions = dimensions || await readImageSize(gifBlob).catch(() => ({ width: 0, height: 0 }));
+    const measuredDimensions =
+      dimensions ||
+      (await readImageSize(gifBlob).catch(() => ({ width: 0, height: 0 })));
     const now = Date.now();
-    const recordGroup = isLibraryBackup ? importGroupName(item.group || FALLBACK_GROUP) : groupName;
+    const recordGroup = isLibraryBackup
+      ? importGroupName(item.group || FALLBACK_GROUP)
+      : groupName;
     const record = {
       id: makeId(),
       title: cleanTitle(item.title || stripExtension(filename)),
@@ -1260,25 +1436,32 @@ async function importGroupArchive(file) {
       useCount: validCount(item.useCount),
       size: gifBlob.size,
       width: measuredDimensions.width,
-      height: measuredDimensions.height
+      height: measuredDimensions.height,
     };
 
     if (PREVIEW_MODE) {
       state.previewBlobs.set(record.id, gifBlob);
       state.gifs = [record, ...state.gifs];
     } else {
-      const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(() => null);
+      const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
+        () => null,
+      );
       await saveGif(record, gifBlob, thumbnailBlob);
     }
     importedGroups.add(recordGroup);
     importedCount += 1;
   }
 
-  if (!importedCount) throw new Error('No GIF files from metadata could be found.');
+  if (!importedCount)
+    throw new Error('No GIF files from metadata could be found.');
 
   state.activeGroup = isLibraryBackup ? ALL_GROUPS : groupName;
-  if (PREVIEW_MODE) state.groups = normalizeGroupList([...state.groups, ...importedGroups]);
-  return { groupName: isLibraryBackup ? 'library backup' : groupName, count: importedCount };
+  if (PREVIEW_MODE)
+    state.groups = normalizeGroupList([...state.groups, ...importedGroups]);
+  return {
+    groupName: isLibraryBackup ? 'library backup' : groupName,
+    count: importedCount,
+  };
 }
 
 function validateEditableGroup(group) {
@@ -1302,8 +1485,13 @@ function deriveGifGroups(gifs) {
 }
 
 function normalizeGroupList(groups) {
-  return [...new Set(groups.map(cleanGroup).filter((group) => group && !isReservedGroupLabel(group)))]
-    .sort((a, b) => a.localeCompare(b));
+  return [
+    ...new Set(
+      groups
+        .map(cleanGroup)
+        .filter((group) => group && !isReservedGroupLabel(group)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 }
 
 function isReservedGroupLabel(group) {
@@ -1317,9 +1505,12 @@ async function loadGifBlob(id) {
 async function loadGifThumbnail(id) {
   if (PREVIEW_MODE) return state.previewBlobs.get(id) || null;
   if (!state.thumbnailJobs.has(id)) {
-    state.thumbnailJobs.set(id, loadOrCreateGifThumbnail(id).finally(() => {
-      state.thumbnailJobs.delete(id);
-    }));
+    state.thumbnailJobs.set(
+      id,
+      loadOrCreateGifThumbnail(id).finally(() => {
+        state.thumbnailJobs.delete(id);
+      }),
+    );
   }
   return state.thumbnailJobs.get(id);
 }
@@ -1353,7 +1544,10 @@ async function createStaticThumbnailBlob(blob) {
 
   const { image, cleanup } = await loadImageFromBlob(blob);
   try {
-    const { width, height } = fitThumbnailSize(image.naturalWidth, image.naturalHeight);
+    const { width, height } = fitThumbnailSize(
+      image.naturalWidth,
+      image.naturalHeight,
+    );
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -1362,9 +1556,11 @@ async function createStaticThumbnailBlob(blob) {
     if (!context) throw new Error('Could not draw thumbnail.');
     context.drawImage(image, 0, 0, width, height);
 
-    return await canvasToBlob(canvas, 'image/webp', 0.78)
-      || await canvasToBlob(canvas, 'image/png')
-      || blob;
+    return (
+      (await canvasToBlob(canvas, 'image/webp', 0.78)) ||
+      (await canvasToBlob(canvas, 'image/png')) ||
+      blob
+    );
   } finally {
     cleanup();
   }
@@ -1392,7 +1588,7 @@ function fitThumbnailSize(sourceWidth, sourceHeight) {
   const scale = Math.min(1, maxEdge / Math.max(safeWidth, safeHeight));
   return {
     width: Math.max(1, Math.round(safeWidth * scale)),
-    height: Math.max(1, Math.round(safeHeight * scale))
+    height: Math.max(1, Math.round(safeHeight * scale)),
   };
 }
 
@@ -1414,14 +1610,16 @@ function mutatePreviewGif(id, patch, options = {}) {
 function prunePreviewGroups() {
   state.groups = pruneEmptyGroups(state.groups, state.gifs, {
     fallbackGroup: FALLBACK_GROUP,
-    reservedLabels: RESERVED_GROUP_LABELS
+    reservedLabels: RESERVED_GROUP_LABELS,
   });
   ensureActiveGroupExists();
 }
 
 function ensureActiveGroupExists() {
-  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP) return;
-  if (!editableGroups().includes(state.activeGroup)) state.activeGroup = ALL_GROUPS;
+  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP)
+    return;
+  if (!editableGroups().includes(state.activeGroup))
+    state.activeGroup = ALL_GROUPS;
 }
 
 function createPreviewLibrary() {
@@ -1434,7 +1632,7 @@ function createPreviewLibrary() {
     ['lunch', 'Lunch time', 'Team', false, '#a84d2f', '#ffd166'],
     ['brb', 'BRB', 'Team', false, '#5b7c99', '#ef476f'],
     ['approved', 'Approved', 'Work', false, '#247ba0', '#70c1b3'],
-    ['oops', 'Oops', 'Reactions', false, '#8f3985', '#ffcad4']
+    ['oops', 'Oops', 'Reactions', false, '#8f3985', '#ffcad4'],
   ];
 
   state.previewBlobs.clear();
@@ -1453,7 +1651,7 @@ function createPreviewLibrary() {
       useCount: Math.max(0, 9 - index),
       size: 220000 + index * 17000,
       width: 360,
-      height: 280
+      height: 280,
     };
   });
 }
@@ -1478,29 +1676,42 @@ function makePreviewBlob(title, colorA, colorB) {
 }
 
 function escapeXml(value) {
-  return value.replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&apos;'
-  }[char]));
+  return value.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&apos;',
+      })[char],
+  );
 }
 
 async function sendToActiveTab(payload) {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
   if (!tab?.id) throw new Error('No active tab found.');
 
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ['src/content-script.js']
-  }).catch(() => {});
+  await chrome.scripting
+    .executeScript({
+      target: { tabId: tab.id },
+      files: ['src/content-script.js'],
+    })
+    .catch(() => {});
 
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tab.id, payload, (response) => {
       const error = chrome.runtime.lastError;
       if (error) {
-        reject(new Error('Open a page with an editable input, focus it, then try again.'));
+        reject(
+          new Error(
+            'Open a page with an editable input, focus it, then try again.',
+          ),
+        );
         return;
       }
       resolve(response);
@@ -1510,7 +1721,8 @@ async function sendToActiveTab(payload) {
 
 function filteredByGroup(gifs) {
   if (state.activeGroup === ALL_GROUPS) return gifs;
-  if (state.activeGroup === FAVORITES_GROUP) return gifs.filter((gif) => gif.favorite);
+  if (state.activeGroup === FAVORITES_GROUP)
+    return gifs.filter((gif) => gif.favorite);
   return gifs.filter((gif) => (gif.group || 'General') === state.activeGroup);
 }
 
@@ -1527,11 +1739,17 @@ function sortGifs(gifs) {
 }
 
 function sortGifsByRecent(gifs) {
-  return [...gifs].sort((a, b) => (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0));
+  return [...gifs].sort(
+    (a, b) =>
+      (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0),
+  );
 }
 
 function updateStorageInfo() {
-  const usage = state.gifs.reduce((total, gif) => total + Number(gif.size || 0), 0);
+  const usage = state.gifs.reduce(
+    (total, gif) => total + Number(gif.size || 0),
+    0,
+  );
   el.storageInfo.textContent = `${bytesToHuman(usage)} used`;
 }
 function setBusy(isBusy) {
@@ -1567,7 +1785,8 @@ function gifGroup(gif) {
 }
 
 function currentImportGroup() {
-  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP) return FALLBACK_GROUP;
+  if (state.activeGroup === ALL_GROUPS || state.activeGroup === FAVORITES_GROUP)
+    return FALLBACK_GROUP;
   return contentGroupName(state.activeGroup);
 }
 
@@ -1621,7 +1840,8 @@ async function createZipBlob(entries) {
     const nameBytes = encodeText(entry.name);
     const originalBytes = new Uint8Array(await entry.blob.arrayBuffer());
     const compressedBytes = await deflateRaw(originalBytes);
-    const shouldCompress = compressedBytes && compressedBytes.length < originalBytes.length;
+    const shouldCompress =
+      compressedBytes && compressedBytes.length < originalBytes.length;
     const dataBytes = shouldCompress ? compressedBytes : originalBytes;
     const method = shouldCompress ? 8 : 0;
     const crc = crc32(originalBytes);
@@ -1669,7 +1889,10 @@ async function createZipBlob(entries) {
   }
 
   const centralOffset = offset;
-  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const centralSize = centralParts.reduce(
+    (total, part) => total + part.length,
+    0,
+  );
   const end = new Uint8Array(22);
   const endView = new DataView(end.buffer);
   endView.setUint32(0, 0x06054b50, true);
@@ -1681,7 +1904,9 @@ async function createZipBlob(entries) {
   endView.setUint32(16, centralOffset, true);
   endView.setUint16(20, 0, true);
 
-  return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+  return new Blob([...localParts, ...centralParts, end], {
+    type: 'application/zip',
+  });
 }
 
 async function readZipBlob(file) {
@@ -1694,7 +1919,8 @@ async function readZipBlob(file) {
   let offset = centralOffset;
 
   for (let index = 0; index < totalEntries; index += 1) {
-    if (view.getUint32(offset, true) !== 0x02014b50) throw new Error('ZIP central directory is invalid.');
+    if (view.getUint32(offset, true) !== 0x02014b50)
+      throw new Error('ZIP central directory is invalid.');
 
     const flags = view.getUint16(offset + 8, true);
     const method = view.getUint16(offset + 10, true);
@@ -1703,10 +1929,14 @@ async function readZipBlob(file) {
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
     const localOffset = view.getUint32(offset + 42, true);
-    const name = decodeZipName(bytes.slice(offset + 46, offset + 46 + nameLength), flags);
+    const name = decodeZipName(
+      bytes.slice(offset + 46, offset + 46 + nameLength),
+      flags,
+    );
 
     if (!name.endsWith('/')) {
-      if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('ZIP local file header is invalid.');
+      if (view.getUint32(localOffset, true) !== 0x04034b50)
+        throw new Error('ZIP local file header is invalid.');
 
       const localNameLength = view.getUint16(localOffset + 26, true);
       const localExtraLength = view.getUint16(localOffset + 28, true);
@@ -1722,7 +1952,10 @@ async function readZipBlob(file) {
         throw new Error(`Unsupported ZIP compression method ${method}.`);
       }
 
-      entries.set(cleanZipLookupName(name), new Blob([data], { type: mimeForZipName(name) }));
+      entries.set(
+        cleanZipLookupName(name),
+        new Blob([data], { type: mimeForZipName(name) }),
+      );
     }
 
     offset += 46 + nameLength + extraLength + commentLength;
@@ -1734,7 +1967,9 @@ async function readZipBlob(file) {
 async function deflateRaw(bytes) {
   if (typeof CompressionStream !== 'function') return null;
   try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    const stream = new Blob([bytes])
+      .stream()
+      .pipeThrough(new CompressionStream('deflate-raw'));
     return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
     return null;
@@ -1742,9 +1977,12 @@ async function deflateRaw(bytes) {
 }
 
 async function inflateRaw(bytes) {
-  if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot import compressed ZIP entries.');
+  if (typeof DecompressionStream !== 'function')
+    throw new Error('This browser cannot import compressed ZIP entries.');
   try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    const stream = new Blob([bytes])
+      .stream()
+      .pipeThrough(new DecompressionStream('deflate-raw'));
     return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
     throw new Error('Could not decompress ZIP entry.');
@@ -1784,8 +2022,12 @@ function crc32Table() {
 
 function dateToDos(date) {
   const year = Math.max(1980, date.getFullYear());
-  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate =
+    ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const dosTime =
+    (date.getHours() << 11) |
+    (date.getMinutes() << 5) |
+    Math.floor(date.getSeconds() / 2);
   return { dosDate, dosTime };
 }
 
@@ -1827,7 +2069,10 @@ function importGroupName(value) {
 function importDimensions(item) {
   const width = Number(item.width);
   const height = Number(item.height);
-  return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+  return Number.isFinite(width) &&
+    width > 0 &&
+    Number.isFinite(height) &&
+    height > 0
     ? { width, height }
     : null;
 }
@@ -1848,15 +2093,19 @@ function cleanTitle(value) {
 
 function ensureGifFilename(filename) {
   const safeName = safeZipSegment(filename || 'gif.gif');
-  return /\.gif$/i.test(safeName) ? safeName : `${stripExtension(safeName)}.gif`;
+  return /\.gif$/i.test(safeName)
+    ? safeName
+    : `${stripExtension(safeName)}.gif`;
 }
 
 function safeZipSegment(value) {
-  return (value || 'group')
-    .trim()
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
-    .replace(/\s+/g, ' ')
-    .slice(0, 80) || 'group';
+  return (
+    (value || 'group')
+      .trim()
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+      .replace(/\s+/g, ' ')
+      .slice(0, 80) || 'group'
+  );
 }
 
 function uniqueZipPath(path, usedPaths) {
