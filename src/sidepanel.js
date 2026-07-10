@@ -30,7 +30,6 @@ const state = {
   gifs: [],
   activeGroup: ALL_GROUPS,
   search: '',
-  sort: 'recent',
   groups: [],
   previewId: null,
   objectUrls: new Map(),
@@ -63,7 +62,6 @@ const el = {
   progressBar: document.querySelector('#progress .progress-track span'),
   searchInput: document.querySelector('#searchInput'),
   sectionList: document.querySelector('#sectionList'),
-  sortSelect: document.querySelector('#sortSelect'),
   statusText: document.querySelector('#statusText'),
   storageInfo: document.querySelector('#storageInfo')
 };
@@ -86,10 +84,6 @@ function wireEvents() {
   el.groupImportInput.addEventListener('change', () => importGroupZip(el.groupImportInput.files?.[0]));
   el.searchInput.addEventListener('input', () => {
     state.search = el.searchInput.value.trim().toLowerCase();
-    render();
-  });
-  el.sortSelect.addEventListener('change', () => {
-    state.sort = el.sortSelect.value;
     render();
   });
 
@@ -1157,14 +1151,7 @@ function filterBySearch(gifs) {
 }
 
 function sortGifs(gifs) {
-  const items = [...gifs];
-  if (state.sort === 'name') {
-    return items.sort((a, b) => a.title.localeCompare(b.title));
-  }
-  if (state.sort === 'created') {
-    return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  }
-  return sortGifsByRecent(items);
+  return sortGifsByRecent(gifs);
 }
 
 function sortGifsByRecent(gifs) {
@@ -1532,4 +1519,3 @@ function downloadBlob(blob, filename) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
-

@@ -387,54 +387,6 @@ select {
 }
 .filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 166px;
-  gap: 8px;
-}
-
-.sort-field {
-  position: relative;
-  min-width: 0;
-}
-
-.sort-field select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-left: 34px;
-  padding-right: 34px;
-  text-align: center;
-  text-align-last: center;
-}
-
-.sort-field select option {
-  text-align: left;
-  text-align-last: left;
-}
-
-.sort-field::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: 13px;
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  pointer-events: none;
-  transform: translateY(-65%) rotate(45deg);
-}
-
-.sort-icon {
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  z-index: 1;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
-  pointer-events: none;
-  transform: translateY(-50%);
 }
 
 .section-list,
