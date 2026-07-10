@@ -29,7 +29,7 @@
 
       <div class="group-row" data-ui="group-row">
         <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
-        <button id="groupEditButton" class="icon-button group-edit-button" data-ui="group-edit-button" type="button" title="Edit groups" aria-label="Edit groups">⚙</button>
+        <button id="groupEditButton" class="icon-button group-edit-button" data-ui="group-edit-button" type="button" title="Edit groups" aria-label="Edit groups"></button>
       </div>
 
       <section class="filters" data-ui="library-filters" aria-label="Library filters">
@@ -61,7 +61,7 @@
       <form method="dialog" data-ui="group-form">
         <header data-ui="group-dialog-header">
           <strong data-ui="group-dialog-title">Groups</strong>
-          <button value="cancel" class="icon-button" data-ui="group-dialog-close" type="submit" title="Close">X</button>
+          <button value="cancel" class="icon-button close-button" data-ui="group-dialog-close" type="submit" title="Close" aria-label="Close"></button>
         </header>
 
         <div class="group-editor-fixed" data-ui="reserved-groups">
@@ -87,7 +87,7 @@
       <form method="dialog" data-ui="preview-form">
         <header data-ui="preview-header">
           <strong data-ui="preview-title">GIF details</strong>
-          <button value="cancel" class="icon-button" data-ui="preview-close-button" type="submit" title="Close">X</button>
+          <button value="cancel" class="icon-button close-button" data-ui="preview-close-button" type="submit" title="Close" aria-label="Close"></button>
         </header>
 
         <img id="previewImage" data-ui="preview-image" alt="">
@@ -119,4 +119,3 @@
     <script type="module" src="sidepanel.js"></script>
   </body>
 </html>
-

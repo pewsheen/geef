@@ -3,12 +3,14 @@ import {
   bytesToHuman,
   deleteGif,
   getGifBlob,
+  getGifThumbnail,
   listGifs,
   listGroups,
   makeId,
   removeGroup,
   renameGroup,
   saveGif,
+  saveGifThumbnail,
   saveGroups,
   touchGif,
   updateGif
@@ -32,6 +34,7 @@ const state = {
   groups: [],
   previewId: null,
   objectUrls: new Map(),
+  thumbnailJobs: new Map(),
   previewBlobs: new Map()
 };
 
@@ -95,6 +98,7 @@ function wireEvents() {
   el.previewSend.addEventListener('click', () => pasteGif(state.previewId, true));
   el.previewSave.addEventListener('click', savePreviewEdits);
   el.previewRemove.addEventListener('click', () => removeGif(state.previewId));
+  el.previewDialog.addEventListener('click', closePreviewFromBackdrop);
 
   document.addEventListener('dragover', (event) => {
     event.preventDefault();
@@ -145,6 +149,11 @@ function buildAllSections() {
   const searched = filterBySearch(state.gifs);
   const groups = editableGroups();
   const sections = [
+    {
+      title: 'Favorites',
+      gifs: sortGifs(searched.filter((gif) => gif.favorite)),
+      dataUi: 'favorites-section'
+    },
     {
       title: 'Recently',
       gifs: sortGifsByRecent(searched).slice(0, RECENT_LIMIT),
@@ -233,28 +242,35 @@ function createGifCard(gif) {
   card.dataset.id = gif.id;
   card.dataset.gifId = gif.id;
 
+  const tile = document.createElement('button');
+  tile.type = 'button';
+  tile.className = 'gif-tile-button';
+  tile.dataset.ui = 'gif-card-send-button';
+  tile.title = `Send ${gif.title}`;
+  tile.setAttribute('aria-label', `Send ${gif.title}`);
+  tile.addEventListener('click', () => pasteGif(gif.id, true));
+
   const img = document.createElement('img');
   img.dataset.ui = 'gif-card-image';
   img.alt = gif.title;
-  img.addEventListener('click', () => openPreview(gif.id));
-
-  const meta = document.createElement('div');
-  meta.className = 'gif-meta';
-  meta.dataset.ui = 'gif-card-meta';
-  meta.innerHTML = `<strong></strong><span></span>`;
-  meta.querySelector('strong').textContent = gif.title;
-  meta.querySelector('span').textContent = `${gif.group || 'General'} · ${bytesToHuman(gif.size)}`;
+  tile.append(img);
 
   const actions = document.createElement('div');
   actions.className = 'gif-actions';
   actions.dataset.ui = 'gif-card-actions';
   actions.append(
-    cardButton('Paste', () => pasteGif(gif.id, false), '', 'gif-card-paste-button'),
-    cardButton('Send', () => pasteGif(gif.id, true), '', 'gif-card-send-button'),
-    favoriteButton(gif)
+    favoriteButton(gif),
+    editButton(gif)
   );
 
-  card.append(img, meta, actions);
+  card.addEventListener('pointerenter', () => playGridGif(gif.id, img));
+  card.addEventListener('pointerleave', () => pauseGridGif(img));
+  card.addEventListener('focusin', () => playGridGif(gif.id, img));
+  card.addEventListener('focusout', (event) => {
+    if (!card.contains(event.relatedTarget)) pauseGridGif(img);
+  });
+
+  card.append(tile, actions);
   return card;
 }
 
@@ -264,9 +280,11 @@ async function hydrateImages(container, gifs) {
     const image = card?.querySelector('img');
     if (!image) continue;
 
-    const blob = await loadGifBlob(gif.id);
+    const blob = await loadGifThumbnail(gif.id).catch(() => loadGifBlob(gif.id));
     if (!blob) continue;
-    image.src = objectUrlFor(gif.id, blob);
+    const url = objectUrlFor(gif.id, blob, 'thumbnail');
+    image.src = url;
+    image.dataset.staticSrc = url;
   }
 }
 
@@ -293,6 +311,18 @@ function favoriteButton(gif) {
   button.dataset.favorite = String(gif.favorite);
   button.setAttribute('aria-label', action);
   button.title = action;
+  return button;
+}
+
+function editButton(gif) {
+  const button = cardButton(
+    '',
+    () => openPreview(gif.id),
+    'edit-button',
+    'gif-card-edit-button'
+  );
+  button.title = 'Edit';
+  button.setAttribute('aria-label', 'Edit');
   return button;
 }
 
@@ -390,7 +420,8 @@ async function saveImportedGif(blob, filename) {
     state.groups = normalizeGroupList([...state.groups, record.group]);
     return;
   }
-  await saveGif(record, gifBlob);
+  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(() => null);
+  await saveGif(record, gifBlob, thumbnailBlob);
 }
 
 async function openPreview(id) {
@@ -405,6 +436,29 @@ async function openPreview(id) {
   el.previewGroup.value = gif.group || 'General';
   el.previewFavorite.checked = Boolean(gif.favorite);
   el.previewDialog.showModal();
+}
+
+function closePreviewFromBackdrop(event) {
+  if (event.button !== 0 || event.target !== el.previewDialog) return;
+  if (!isOutsideElement(event, el.previewDialog)) return;
+  el.previewDialog.close();
+  clearRestoredGifFocus();
+}
+
+function isOutsideElement(event, element) {
+  const rect = element.getBoundingClientRect();
+  return event.clientX < rect.left
+    || event.clientX > rect.right
+    || event.clientY < rect.top
+    || event.clientY > rect.bottom;
+}
+
+function clearRestoredGifFocus() {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (!active?.closest?.('[data-ui="gif-card"]')) return;
+    active.blur?.();
+  });
 }
 
 async function savePreviewEdits() {
@@ -849,7 +903,8 @@ async function importGroupArchive(file) {
       state.previewBlobs.set(record.id, gifBlob);
       state.gifs = [record, ...state.gifs];
     } else {
-      await saveGif(record, gifBlob);
+      const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(() => null);
+      await saveGif(record, gifBlob, thumbnailBlob);
     }
     importedCount += 1;
   }
@@ -891,6 +946,94 @@ function isReservedGroupLabel(group) {
 }
 async function loadGifBlob(id) {
   return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getGifBlob(id);
+}
+
+async function loadGifThumbnail(id) {
+  if (PREVIEW_MODE) return state.previewBlobs.get(id) || null;
+  if (!state.thumbnailJobs.has(id)) {
+    state.thumbnailJobs.set(id, loadOrCreateGifThumbnail(id).finally(() => {
+      state.thumbnailJobs.delete(id);
+    }));
+  }
+  return state.thumbnailJobs.get(id);
+}
+
+async function loadOrCreateGifThumbnail(id) {
+  const cached = await getGifThumbnail(id);
+  if (cached) return cached;
+
+  const gifBlob = await getGifBlob(id);
+  if (!gifBlob) return null;
+
+  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob);
+  await saveGifThumbnail(id, thumbnailBlob);
+  return thumbnailBlob;
+}
+
+async function playGridGif(id, image) {
+  image.dataset.playing = 'true';
+  const blob = await loadGifBlob(id);
+  if (!blob || image.dataset.playing !== 'true') return;
+  image.src = objectUrlFor(id, blob, 'gif');
+}
+
+function pauseGridGif(image) {
+  image.dataset.playing = 'false';
+  if (image.dataset.staticSrc) image.src = image.dataset.staticSrc;
+}
+
+async function createStaticThumbnailBlob(blob) {
+  if (blob.type === 'image/svg+xml') return blob;
+
+  const { image, cleanup } = await loadImageFromBlob(blob);
+  try {
+    const { width, height } = fitThumbnailSize(image.naturalWidth, image.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not draw thumbnail.');
+    context.drawImage(image, 0, 0, width, height);
+
+    return await canvasToBlob(canvas, 'image/webp', 0.78)
+      || await canvasToBlob(canvas, 'image/png')
+      || blob;
+  } finally {
+    cleanup();
+  }
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    const cleanup = () => URL.revokeObjectURL(url);
+
+    image.onload = () => resolve({ image, cleanup });
+    image.onerror = () => {
+      cleanup();
+      reject(new Error('Could not create GIF thumbnail.'));
+    };
+    image.src = url;
+  });
+}
+
+function fitThumbnailSize(sourceWidth, sourceHeight) {
+  const maxEdge = 360;
+  const safeWidth = Math.max(1, sourceWidth || maxEdge);
+  const safeHeight = Math.max(1, sourceHeight || Math.round(maxEdge * 0.78));
+  const scale = Math.min(1, maxEdge / Math.max(safeWidth, safeHeight));
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale))
+  };
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, type, quality);
+  });
 }
 
 function mutatePreviewGif(id, patch, options = {}) {
@@ -1078,18 +1221,21 @@ function countText(count) {
   return `${count} item${count === 1 ? '' : 's'}`;
 }
 
-function objectUrlFor(id, blob) {
-  if (state.objectUrls.has(id)) return state.objectUrls.get(id);
+function objectUrlFor(id, blob, variant = 'gif') {
+  const key = `${variant}:${id}`;
+  if (state.objectUrls.has(key)) return state.objectUrls.get(key);
   const url = URL.createObjectURL(blob);
-  state.objectUrls.set(id, url);
+  state.objectUrls.set(key, url);
   return url;
 }
 
 function revokeObjectUrl(id) {
-  const url = state.objectUrls.get(id);
-  if (!url) return;
-  URL.revokeObjectURL(url);
-  state.objectUrls.delete(id);
+  for (const [key, url] of state.objectUrls) {
+    if (key === id || key.endsWith(`:${id}`)) {
+      URL.revokeObjectURL(url);
+      state.objectUrls.delete(key);
+    }
+  }
 }
 
 function readImageSize(blob) {
@@ -1387,15 +1533,5 @@ function downloadBlob(blob, filename) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
-
-
-
-
-
-
-
-
-
-
 
 
