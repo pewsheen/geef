@@ -23,9 +23,54 @@ export async function listGroups() {
   return readGroups(settings);
 }
 
+export async function getLibraryUsage() {
+  const db = await openDb();
+  const tx = db.transaction(['gifs', 'blobs', 'thumbnails'], 'readonly');
+  const [gifs, blobs, thumbnails] = await Promise.all([
+    request(tx.objectStore('gifs').getAll()),
+    request(tx.objectStore('blobs').getAll()),
+    request(tx.objectStore('thumbnails').getAll())
+  ]);
+  const gifBytesById = new Map(blobs.map((item) => [item.id, item.blob?.size || 0]));
+  const thumbnailBytesById = new Map(thumbnails.map((item) => [item.id, item.blob?.size || 0]));
+  const groups = new Map();
+
+  for (const gif of gifs) {
+    const group = gif.group || DEFAULT_GROUP;
+    const usage = groups.get(group) || { group, gifBytes: 0, thumbnailBytes: 0, totalBytes: 0 };
+    usage.gifBytes += gifBytesById.get(gif.id) || 0;
+    usage.thumbnailBytes += thumbnailBytesById.get(gif.id) || 0;
+    usage.totalBytes = usage.gifBytes + usage.thumbnailBytes;
+    groups.set(group, usage);
+  }
+
+  const gifBytes = [...gifBytesById.values()].reduce((total, bytes) => total + bytes, 0);
+  const thumbnailBytes = [...thumbnailBytesById.values()].reduce((total, bytes) => total + bytes, 0);
+  return {
+    gifBytes,
+    thumbnailBytes,
+    totalBytes: gifBytes + thumbnailBytes,
+    groups: [...groups.values()].sort((a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group))
+  };
+}
+
 export async function saveGroups(groups) {
   const db = await openDb();
   return transaction(db, ['settings'], 'readwrite', (stores) => writeGroups(stores.settings, groups));
+}
+
+export async function getSetting(key) {
+  const db = await openDb();
+  const row = await request(db.transaction('settings', 'readonly').objectStore('settings').get(key));
+  return row?.value ?? null;
+}
+
+export async function saveSetting(key, value) {
+  const db = await openDb();
+  return transaction(db, ['settings'], 'readwrite', (stores) => {
+    stores.settings.put({ key, value });
+    return value;
+  });
 }
 
 export async function renameGroup(oldGroup, newGroup) {

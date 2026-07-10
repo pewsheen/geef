@@ -27,8 +27,10 @@
       </div>
 
       <div class="group-row" data-ui="group-row">
-        <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
-        <button id="groupEditButton" class="icon-button group-edit-button" data-ui="group-edit-button" type="button" title="Edit groups" aria-label="Edit groups"></button>
+        <div class="group-bar-wrap" data-ui="group-bar-wrap">
+          <nav id="groupBar" class="group-bar" data-ui="group-bar" aria-label="GIF groups"></nav>
+        </div>
+        <button id="groupEditButton" class="icon-button group-edit-button" data-ui="settings-button" type="button" title="Settings" aria-label="Settings"></button>
       </div>
 
       <section class="filters" data-ui="library-filters" aria-label="Library filters">
@@ -48,29 +50,73 @@
       <span id="statusText" data-ui="status-text">Ready</span>
     </footer>
 
-    <dialog id="groupDialog" class="group-dialog" data-ui="group-dialog">
-      <form method="dialog" data-ui="group-form">
-        <header data-ui="group-dialog-header">
-          <strong data-ui="group-dialog-title">Groups</strong>
-          <button value="cancel" class="icon-button close-button" data-ui="group-dialog-close" type="submit" title="Close" aria-label="Close"></button>
+    <dialog id="settingsDialog" class="settings-dialog" data-ui="settings-dialog">
+      <form method="dialog" data-ui="settings-form">
+        <header data-ui="settings-dialog-header">
+          <strong data-ui="settings-dialog-title">Settings</strong>
+          <button value="cancel" class="icon-button close-button" data-ui="settings-dialog-close" type="submit" title="Close" aria-label="Close"></button>
         </header>
 
-        <div class="group-editor-fixed" data-ui="reserved-groups">
-          <span data-ui="reserved-group-all">All</span>
-          <span data-ui="reserved-group-favorites">Favorites</span>
+        <div class="settings-tabs-wrap" data-ui="settings-tabs-wrap">
+          <div class="settings-tabs" data-ui="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button id="appearanceTab" data-settings-tab="appearance" data-ui="appearance-tab" type="button" role="tab" aria-selected="true" aria-controls="appearancePanel">Appearance</button>
+            <button id="groupTab" data-settings-tab="group" data-ui="group-tab" type="button" role="tab" aria-selected="false" aria-controls="groupPanel" tabindex="-1">Group</button>
+            <button id="backupTab" data-settings-tab="backup" data-ui="backup-tab" type="button" role="tab" aria-selected="false" aria-controls="backupPanel" tabindex="-1">Backup</button>
+            <button id="dataTab" data-settings-tab="data" data-ui="data-tab" type="button" role="tab" aria-selected="false" aria-controls="dataPanel" tabindex="-1">Data</button>
+          </div>
         </div>
 
-        <div class="group-archive-row" data-ui="group-archive-row">
-          <input id="groupImportInput" data-ui="group-import-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
-          <button id="groupImportButton" data-ui="group-import-button" type="button">Import ZIP</button>
-        </div>
+        <section id="appearancePanel" class="settings-panel appearance-panel" data-ui="appearance-settings-panel" role="tabpanel" aria-labelledby="appearanceTab">
+          <label class="setting-field" data-ui="grid-cell-width-field">
+            <span data-ui="grid-cell-width-label">Minimum cell width</span>
+            <span class="setting-control">
+              <input id="gridCellMinInput" data-ui="grid-cell-width-input" type="text" inputmode="numeric" autocomplete="off" placeholder="110px" aria-describedby="gridCellMinHint">
+              <button id="gridCellMinApplyButton" data-ui="grid-cell-width-apply-button" type="button">Apply</button>
+            </span>
+            <small id="gridCellMinHint" data-ui="grid-cell-width-hint">Use pixels. Leave blank to use the 110px default.</small>
+          </label>
+          <div class="grid-cell-preview" data-ui="grid-cell-preview" aria-label="GIF cell size preview">
+            <div id="gridCellPreviewTile" class="grid-cell-preview-tile">
+              <span>GIF cell</span>
+              <strong id="gridCellPreviewLabel">110px</strong>
+            </div>
+          </div>
+        </section>
 
-        <div id="groupList" class="group-list" data-ui="group-list"></div>
+        <section id="groupPanel" class="settings-panel group-panel" data-ui="group-settings-panel" role="tabpanel" aria-labelledby="groupTab" hidden>
+          <div id="groupList" class="group-list" data-ui="group-list"></div>
 
-        <div class="group-add-row" data-ui="group-add-row">
-          <input id="groupAddInput" data-ui="group-add-input" type="text" maxlength="32" placeholder="New group">
-          <button id="groupAddButton" data-ui="group-add-button" type="button">Add</button>
-        </div>
+          <div class="group-add-row" data-ui="group-add-row">
+            <input id="groupAddInput" data-ui="group-add-input" type="text" maxlength="32" placeholder="New group">
+            <button id="groupAddButton" data-ui="group-add-button" type="button">Add</button>
+          </div>
+        </section>
+
+        <section id="backupPanel" class="settings-panel backup-panel" data-ui="backup-settings-panel" role="tabpanel" aria-labelledby="backupTab" hidden>
+          <div class="backup-actions" data-ui="backup-actions">
+            <input id="groupImportInput" data-ui="group-import-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+            <button id="groupImportButton" data-ui="group-import-button" type="button">Import ZIP</button>
+            <button id="exportAllButton" data-ui="export-all-button" type="button">Export all</button>
+          </div>
+
+          <div class="archive-export-section" data-ui="group-export-section">
+            <strong data-ui="group-export-title">Export a group</strong>
+            <div id="groupExportList" class="group-export-list" data-ui="group-export-list"></div>
+          </div>
+        </section>
+
+        <section id="dataPanel" class="settings-panel data-panel" data-ui="data-settings-panel" role="tabpanel" aria-labelledby="dataTab" hidden>
+          <div class="data-totals" data-ui="data-totals">
+            <div data-ui="data-gif-total"><span>GIFs</span><strong id="dataGifUsage">0 B</strong></div>
+            <div data-ui="data-thumbnail-total"><span>Thumbnails</span><strong id="dataThumbnailUsage">0 B</strong></div>
+            <div data-ui="data-library-total"><span>Library total</span><strong id="dataLibraryUsage">0 B</strong></div>
+          </div>
+
+          <div class="data-group-section" data-ui="data-group-section">
+            <strong data-ui="data-group-title">By group</strong>
+            <div id="dataGroupUsageList" class="data-group-list" data-ui="data-group-list"></div>
+          </div>
+        </section>
       </form>
     </dialog>
 
