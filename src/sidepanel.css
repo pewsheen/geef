@@ -270,7 +270,6 @@ select {
   color: #f5b301;
 }
 
-
 .group-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 34px;

@@ -1,6 +1,10 @@
+const MAX_GROUP_NAME_LENGTH = 32;
+
 export function pruneEmptyGroups(groups, gifs, options = {}) {
   const fallbackGroup = cleanGroupName(options.fallbackGroup) || 'General';
-  const reservedLabels = new Set(Array.from(options.reservedLabels || []).map((group) => cleanGroupName(group).toLowerCase()));
+  const reservedLabels = new Set(
+    Array.from(options.reservedLabels || [], (group) => cleanGroupName(group).toLowerCase())
+  );
   const usedGroups = new Set((gifs || [])
     .map((gif) => cleanGroupName(gif?.group) || fallbackGroup)
     .filter((group) => group && !reservedLabels.has(group.toLowerCase())));
@@ -9,12 +13,11 @@ export function pruneEmptyGroups(groups, gifs, options = {}) {
     .filter((group) => usedGroups.has(group) && !reservedLabels.has(group.toLowerCase()));
 }
 
-function normalizeGroups(groups) {
+export function normalizeGroups(groups) {
   return [...new Set((groups || []).map(cleanGroupName).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
 }
 
-function cleanGroupName(value) {
-  return (value || '').trim().slice(0, 32);
+export function cleanGroupName(value) {
+  return String(value || '').trim().slice(0, MAX_GROUP_NAME_LENGTH);
 }
-

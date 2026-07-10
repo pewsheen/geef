@@ -65,8 +65,7 @@ const el = {
   sectionList: document.querySelector('#sectionList'),
   sortSelect: document.querySelector('#sortSelect'),
   statusText: document.querySelector('#statusText'),
-  storageInfo: document.querySelector('#storageInfo'),
-
+  storageInfo: document.querySelector('#storageInfo')
 };
 
 wireEvents();
@@ -361,7 +360,6 @@ async function importMediaFiles(files) {
       archiveGifCount += imported.count;
     }
 
-
     const parts = [];
     if (added) parts.push(`added ${added} GIF${added === 1 ? '' : 's'}`);
     if (converted) parts.push(`converted ${converted} video${converted === 1 ? '' : 's'}`);
@@ -649,6 +647,7 @@ function positionInspectLabel(label, element) {
   const left = Math.max(8, Math.min(window.innerWidth - label.offsetWidth - 8, rect.left));
   label.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
+
 function openGroupDialog() {
   renderGroupEditor();
   el.groupAddInput.value = '';
@@ -944,6 +943,7 @@ function normalizeGroupList(groups) {
 function isReservedGroupLabel(group) {
   return RESERVED_GROUP_LABELS.has(cleanGroup(group).toLowerCase());
 }
+
 async function loadGifBlob(id) {
   return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getGifBlob(id);
 }
@@ -1120,6 +1120,7 @@ function escapeXml(value) {
     "'": '&apos;'
   }[char]));
 }
+
 async function sendToActiveTab(payload) {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab?.id) throw new Error('No active tab found.');
@@ -1174,8 +1175,6 @@ function updateStorageInfo() {
   const usage = state.gifs.reduce((total, gif) => total + Number(gif.size || 0), 0);
   el.storageInfo.textContent = `${bytesToHuman(usage)} used`;
 }
-
-
 function setBusy(isBusy) {
   for (const button of document.querySelectorAll('button')) {
     button.disabled = isBusy;
@@ -1533,5 +1532,4 @@ function downloadBlob(blob, filename) {
 function cssEscape(value) {
   return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 }
-
 

@@ -1,7 +1,8 @@
-import { pruneEmptyGroups } from './group-utils.mjs';
+import { cleanGroupName, normalizeGroups, pruneEmptyGroups } from './group-utils.mjs';
 
 const DB_NAME = 'geef';
 const DB_VERSION = 3;
+const DEFAULT_GROUP = 'General';
 const GROUPS_KEY = 'groups';
 
 let dbPromise;
@@ -18,17 +19,13 @@ export async function listGifs() {
 
 export async function listGroups() {
   const db = await openDb();
-  const row = await request(db.transaction('settings', 'readonly').objectStore('settings').get(GROUPS_KEY));
-  return Array.isArray(row?.value) ? normalizeGroups(row.value) : [];
+  const settings = db.transaction('settings', 'readonly').objectStore('settings');
+  return readGroups(settings);
 }
 
 export async function saveGroups(groups) {
   const db = await openDb();
-  const normalized = normalizeGroups(groups);
-  await transaction(db, ['settings'], 'readwrite', (stores) => {
-    stores.settings.put({ key: GROUPS_KEY, value: normalized });
-  });
-  return normalized;
+  return transaction(db, ['settings'], 'readwrite', (stores) => writeGroups(stores.settings, groups));
 }
 
 export async function renameGroup(oldGroup, newGroup) {
@@ -40,22 +37,22 @@ export async function renameGroup(oldGroup, newGroup) {
   return transaction(db, ['gifs', 'settings'], 'readwrite', async (stores) => {
     const records = await request(stores.gifs.getAll());
     for (const gif of records) {
-      if ((gif.group || 'General') === from) {
+      if ((gif.group || DEFAULT_GROUP) === from) {
         stores.gifs.put({ ...gif, group: to, updatedAt: Date.now() });
       }
     }
 
-    const current = await request(stores.settings.get(GROUPS_KEY));
-    const groups = normalizeGroups([...(current?.value || []), to].map((group) => (group === from ? to : group)));
-    stores.settings.put({ key: GROUPS_KEY, value: groups.filter((group) => group !== from) });
-    return groups;
+    const groups = (await readGroups(stores.settings))
+      .map((group) => (group === from ? to : group))
+      .filter((group) => group !== from);
+    return writeGroups(stores.settings, groups);
   });
 }
 
-export async function removeGroup(groupName, fallbackGroup = 'General') {
+export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
   const db = await openDb();
   const target = cleanGroupName(groupName);
-  const fallback = cleanGroupName(fallbackGroup) || 'General';
+  const fallback = cleanGroupName(fallbackGroup) || DEFAULT_GROUP;
   if (!target) return listGroups();
 
   return transaction(db, ['gifs', 'settings'], 'readwrite', async (stores) => {
@@ -63,18 +60,15 @@ export async function removeGroup(groupName, fallbackGroup = 'General') {
     let movedRecords = false;
 
     for (const gif of records) {
-      if ((gif.group || 'General') === target) {
+      if ((gif.group || DEFAULT_GROUP) === target) {
         movedRecords = true;
         stores.gifs.put({ ...gif, group: fallback, updatedAt: Date.now() });
       }
     }
 
-    const current = await request(stores.settings.get(GROUPS_KEY));
-    const rawGroups = [...(current?.value || [])].filter((group) => group !== target);
+    const rawGroups = (await readGroups(stores.settings)).filter((group) => group !== target);
     if (movedRecords) rawGroups.push(fallback);
-    const groups = normalizeGroups(rawGroups);
-    stores.settings.put({ key: GROUPS_KEY, value: groups });
-    return groups;
+    return writeGroups(stores.settings, rawGroups);
   });
 }
 
@@ -105,9 +99,8 @@ export async function saveGif(record, blob, thumbnailBlob = null) {
     stores.blobs.put({ id: record.id, blob });
     if (thumbnailBlob) stores.thumbnails.put({ id: record.id, blob: thumbnailBlob });
 
-    const current = await request(stores.settings.get(GROUPS_KEY));
-    const groups = normalizeGroups([...(current?.value || []), record.group || 'General']);
-    stores.settings.put({ key: GROUPS_KEY, value: groups });
+    const groups = await readGroups(stores.settings);
+    writeGroups(stores.settings, [...groups, record.group || DEFAULT_GROUP]);
   });
   return record;
 }
@@ -122,10 +115,9 @@ export async function updateGif(id, patch) {
 
     if (patch.group && patch.group !== current.group) {
       const records = await request(stores.gifs.getAll());
-      const currentGroups = await request(stores.settings.get(GROUPS_KEY));
+      const currentGroups = await readGroups(stores.settings);
       const nextRecords = records.map((gif) => (gif.id === id ? next : gif));
-      const groups = pruneEmptyGroups([...(currentGroups?.value || []), patch.group], nextRecords);
-      stores.settings.put({ key: GROUPS_KEY, value: groups });
+      writeGroups(stores.settings, pruneEmptyGroups([...currentGroups, patch.group], nextRecords));
     }
 
     return next;
@@ -137,11 +129,12 @@ export async function touchGif(id) {
   return transaction(db, ['gifs'], 'readwrite', async (stores) => {
     const current = await request(stores.gifs.get(id));
     if (!current) return null;
+    const now = Date.now();
     const next = {
       ...current,
       useCount: (current.useCount || 0) + 1,
-      lastUsedAt: Date.now(),
-      updatedAt: Date.now()
+      lastUsedAt: now,
+      updatedAt: now
     };
     stores.gifs.put(next);
     return next;
@@ -152,13 +145,12 @@ export async function deleteGif(id) {
   const db = await openDb();
   await transaction(db, ['gifs', 'blobs', 'thumbnails', 'settings'], 'readwrite', async (stores) => {
     const records = await request(stores.gifs.getAll());
-    const currentGroups = await request(stores.settings.get(GROUPS_KEY));
+    const currentGroups = await readGroups(stores.settings);
     stores.gifs.delete(id);
     stores.blobs.delete(id);
     stores.thumbnails.delete(id);
 
-    const groups = pruneEmptyGroups(currentGroups?.value || [], records.filter((gif) => gif.id !== id));
-    stores.settings.put({ key: GROUPS_KEY, value: groups });
+    writeGroups(stores.settings, pruneEmptyGroups(currentGroups, records.filter((gif) => gif.id !== id)));
   });
 }
 
@@ -235,33 +227,38 @@ function request(indexedDbRequest) {
   });
 }
 
+async function readGroups(settings) {
+  const row = await request(settings.get(GROUPS_KEY));
+  return normalizeGroups(Array.isArray(row?.value) ? row.value : []);
+}
+
+function writeGroups(settings, groups) {
+  const normalized = normalizeGroups(groups);
+  settings.put({ key: GROUPS_KEY, value: normalized });
+  return normalized;
+}
+
 function transaction(db, storeNames, mode, callback) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeNames, mode);
     const stores = Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]));
     let callbackResult;
+    let callbackError;
 
     tx.oncomplete = () => resolve(callbackResult);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+    tx.onerror = () => reject(callbackError || tx.error);
+    tx.onabort = () => reject(callbackError || tx.error || new Error('IndexedDB transaction aborted'));
 
-    Promise.resolve(callback(stores))
+    Promise.resolve()
+      .then(() => callback(stores))
       .then((result) => {
         callbackResult = result;
       })
       .catch((error) => {
+        callbackError = error;
         tx.abort();
-        reject(error);
       });
   });
-}
-
-function normalizeGroups(groups) {
-  return [...new Set(groups.map(cleanGroupName).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-}
-
-function cleanGroupName(value) {
-  return (value || '').trim().slice(0, 32);
 }
 
 function sortByFavoriteThenRecent(a, b) {
