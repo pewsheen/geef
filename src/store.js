@@ -53,10 +53,12 @@ export async function getLibraryUsage() {
     const group = gif.group || DEFAULT_GROUP;
     const usage = groups.get(group) || {
       group,
+      gifCount: 0,
       gifBytes: 0,
       thumbnailBytes: 0,
       totalBytes: 0,
     };
+    usage.gifCount += 1;
     usage.gifBytes += gifBytesById.get(gif.id) || 0;
     usage.thumbnailBytes += thumbnailBytesById.get(gif.id) || 0;
     usage.totalBytes = usage.gifBytes + usage.thumbnailBytes;
@@ -72,6 +74,7 @@ export async function getLibraryUsage() {
     0,
   );
   return {
+    gifCount: gifs.length,
     gifBytes,
     thumbnailBytes,
     totalBytes: gifBytes + thumbnailBytes,

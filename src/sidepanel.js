@@ -324,15 +324,11 @@ function createLibrarySection(section) {
   heading.dataset.ui = 'section-heading';
   heading.textContent = section.title;
 
-  const count = document.createElement('span');
-  count.dataset.ui = 'section-count';
-  count.textContent = countText(section.gifs.length);
-
   const grid = document.createElement('div');
   grid.className = 'gif-grid';
   grid.dataset.ui = 'section-grid';
 
-  title.append(heading, count);
+  title.append(heading);
   sectionNode.append(title, grid);
   renderGrid(grid, section.gifs);
   return sectionNode;
@@ -966,7 +962,7 @@ function endGroupBarDrag(event) {
 
 async function renderDataPanel() {
   const usage = PREVIEW_MODE ? previewLibraryUsage() : await getLibraryUsage();
-  el.dataGifUsage.textContent = bytesToHuman(usage.gifBytes);
+  el.dataGifUsage.textContent = `${bytesToHuman(usage.gifBytes)} · ${gifCountText(usage.gifCount)}`;
   el.dataThumbnailUsage.textContent = bytesToHuman(usage.thumbnailBytes);
   el.dataLibraryUsage.textContent = bytesToHuman(usage.totalBytes);
 
@@ -990,8 +986,8 @@ async function renderDataPanel() {
       name.textContent = group.group;
       const total = document.createElement('strong');
       total.textContent = bytesToHuman(group.totalBytes);
-    const detail = document.createElement('span');
-      detail.textContent = `GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
+      const detail = document.createElement('span');
+      detail.textContent = `${gifCountText(group.gifCount)} · GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'danger-button';
@@ -1036,10 +1032,12 @@ function previewLibraryUsage() {
     const group = gif.group || FALLBACK_GROUP;
     const usage = groups.get(group) || {
       group,
+      gifCount: 0,
       gifBytes: 0,
       thumbnailBytes: 0,
       totalBytes: 0,
     };
+    usage.gifCount += 1;
     usage.gifBytes += bytes;
     usage.totalBytes = usage.gifBytes;
     groups.set(group, usage);
@@ -1047,6 +1045,7 @@ function previewLibraryUsage() {
   }
 
   return {
+    gifCount: state.gifs.length,
     gifBytes,
     thumbnailBytes: 0,
     totalBytes: gifBytes,
@@ -1888,8 +1887,8 @@ function stripExtension(filename) {
   return filename.replace(/\.[^.]+$/, '');
 }
 
-function countText(count) {
-  return `${count} item${count === 1 ? '' : 's'}`;
+function gifCountText(count) {
+  return `${count} GIF${count === 1 ? '' : 's'}`;
 }
 
 function objectUrlFor(id, blob, variant = 'gif') {
