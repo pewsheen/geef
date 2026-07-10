@@ -570,6 +570,32 @@ select {
   overflow: auto;
 }
 
+.import-group-row {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.import-group-row input[type='checkbox'] {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.import-group-source {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-group-row input[type='text'] {
+  min-width: 0;
+}
+
 .group-archive-row {
   display: grid;
 }
@@ -672,7 +698,7 @@ select {
 
 .data-group-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 2px 10px;
   align-items: baseline;
   padding: 8px 0;
@@ -687,6 +713,13 @@ select {
 
 .data-group-row span {
   grid-column: 1 / -1;
+}
+
+.data-group-row button {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  padding: 0 8px;
 }
 .filters {
   display: grid;
@@ -778,6 +811,20 @@ select {
   object-fit: cover;
   background: var(--panel-strong);
   cursor: pointer;
+}
+
+.gif-card.is-thumbnail-loading::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(100deg, transparent 25%, rgba(255, 255, 255, 0.12) 45%, transparent 65%), var(--panel-strong);
+  background-size: 200% 100%;
+  animation: thumbnail-skeleton 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes thumbnail-skeleton {
+  to { background-position: -200% 0; }
 }
 
 .gif-actions {

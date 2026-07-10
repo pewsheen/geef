@@ -35,6 +35,9 @@ let settingsTabsDrag = null;
 let suppressSettingsTabClick = false;
 let groupBarDrag = null;
 let suppressGroupBarClick = false;
+let thumbnailObserver = null;
+const gridGifIndex = new Map();
+let pendingImportArchive = null;
 
 const state = {
   gifs: [],
@@ -75,6 +78,7 @@ const el = {
   dataThumbnailUsage: document.querySelector('#dataThumbnailUsage'),
   dataLibraryUsage: document.querySelector('#dataLibraryUsage'),
   dataGroupUsageList: document.querySelector('#dataGroupUsageList'),
+  dataRemoveAllButton: document.querySelector('#dataRemoveAllButton'),
   previewDialog: document.querySelector('#previewDialog'),
   previewFavorite: document.querySelector('#previewFavorite'),
   previewGroup: document.querySelector('#previewGroup'),
@@ -94,6 +98,11 @@ const el = {
   appearancePanel: document.querySelector('#appearancePanel'),
   statusText: document.querySelector('#statusText'),
   storageInfo: document.querySelector('#storageInfo'),
+  importDialog: document.querySelector('#importDialog'),
+  importGroupList: document.querySelector('#importGroupList'),
+  importFavoritesField: document.querySelector('#importFavoritesField'),
+  importFavorites: document.querySelector('#importFavorites'),
+  importConfirmButton: document.querySelector('#importConfirmButton'),
 };
 
 wireEvents();
@@ -118,7 +127,9 @@ function wireEvents() {
   el.groupImportInput.addEventListener('change', () =>
     importGroupZip(el.groupImportInput.files?.[0]),
   );
+  el.importConfirmButton.addEventListener('click', confirmImportArchive);
   el.exportAllButton.addEventListener('click', exportAllGifs);
+  el.dataRemoveAllButton.addEventListener('click', () => removeDataGifs());
   el.gridCellMinInput.addEventListener('change', saveGridCellMin);
   el.gridCellMinInput.addEventListener('input', updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener('click', saveGridCellMin);
@@ -208,6 +219,8 @@ function render() {
     0,
   );
 
+  thumbnailObserver?.disconnect();
+  gridGifIndex.clear();
   el.sectionList.replaceChildren(...sections.map(createLibrarySection));
   el.emptyState.hidden = visibleCount !== 0 || state.gifs.length !== 0;
   updateStorageInfo();
@@ -332,7 +345,7 @@ function renderGrid(container, gifs) {
 
 function createGifCard(gif) {
   const card = document.createElement('article');
-  card.className = 'gif-card';
+  card.className = 'gif-card is-thumbnail-loading';
   card.dataset.ui = 'gif-card';
   card.dataset.id = gif.id;
   card.dataset.gifId = gif.id;
@@ -366,18 +379,33 @@ function createGifCard(gif) {
 }
 
 async function hydrateImages(container, gifs) {
+  if (!thumbnailObserver) {
+    thumbnailObserver = new IntersectionObserver(handleThumbnailVisibility, {
+      root: el.sectionList,
+      rootMargin: '240px 0px',
+    });
+  }
   for (const gif of gifs) {
     const card = container.querySelector(`[data-id="${cssEscape(gif.id)}"]`);
-    const image = card?.querySelector('img');
-    if (!image) continue;
+    if (!card) continue;
+    gridGifIndex.set(gif.id, gif);
+    thumbnailObserver.observe(card);
+  }
+}
 
-    const blob = await loadGifThumbnail(gif.id).catch(() =>
-      loadGifBlob(gif.id),
-    );
+async function handleThumbnailVisibility(entries) {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    thumbnailObserver.unobserve(entry.target);
+    const gif = gridGifIndex.get(entry.target.dataset.gifId);
+    const image = entry.target.querySelector('img');
+    if (!gif || !image) continue;
+    const blob = await loadGifThumbnail(gif.id).catch(() => loadGifBlob(gif.id));
     if (!blob) continue;
     const url = objectUrlFor(gif.id, blob, 'thumbnail');
     image.src = url;
     image.dataset.staticSrc = url;
+    entry.target.classList.remove('is-thumbnail-loading');
   }
 }
 
@@ -980,12 +1008,41 @@ async function renderDataPanel() {
       name.textContent = group.group;
       const total = document.createElement('strong');
       total.textContent = bytesToHuman(group.totalBytes);
-      const detail = document.createElement('span');
+    const detail = document.createElement('span');
       detail.textContent = `GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
-      row.append(name, total, detail);
-      return row;
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'danger-button';
+    removeButton.dataset.ui = 'data-group-remove-button';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => removeDataGifs(group.group));
+    row.append(name, total, detail, removeButton);
+    return row;
     }),
   );
+}
+
+async function removeDataGifs(group = null) {
+  const targets = state.gifs.filter((gif) => !group || (gif.group || FALLBACK_GROUP) === group);
+  if (!targets.length) return;
+  const label = group ? `group "${group}" and its ${targets.length} GIF${targets.length === 1 ? '' : 's'}` : `all ${targets.length} GIF${targets.length === 1 ? '' : 's'}`;
+  if (!confirm(`Remove ${label}? This cannot be undone.`)) return;
+
+  if (PREVIEW_MODE) {
+    const targetIds = new Set(targets.map((gif) => gif.id));
+    targets.forEach((gif) => state.previewBlobs.delete(gif.id));
+    state.gifs = state.gifs.filter((gif) => !targetIds.has(gif.id));
+    state.groups = deriveGifGroups(state.gifs);
+  } else {
+    for (const gif of targets) await deleteGif(gif.id);
+    state.gifs = await listGifs();
+    state.groups = await listGroups();
+  }
+
+  state.activeGroup = ALL_GROUPS;
+  render();
+  renderDataPanel();
+  setStatus(`Removed ${label}.`);
 }
 
 function previewLibraryUsage() {
@@ -1372,36 +1429,91 @@ async function exportAllGifs() {
 
 async function importGroupZip(file) {
   if (!file) return;
-
-  setBusy(true);
   try {
-    const imported = await importGroupArchive(file);
-    await refresh();
-    renderSettingsEditor();
-    setStatus(
-      `Imported "${imported.groupName}" (${imported.count} GIF${imported.count === 1 ? '' : 's'}).`,
-    );
+    const entries = await readZipBlob(file);
+    const metadataBlob = findZipEntry(entries, 'metadata.json');
+    if (!metadataBlob) throw new Error('metadata.json is missing.');
+    const metadata = JSON.parse(await metadataBlob.text());
+    const gifs = Array.isArray(metadata.gifs) ? metadata.gifs : [];
+    if (!gifs.length) throw new Error('metadata.json has no GIF records.');
+    const groups = [...new Set(gifs.map((gif) => importGroupName(gif.group || metadata.groupName || stripExtension(file.name))))];
+    pendingImportArchive = { entries, metadata, gifs, file, groups };
+    renderImportGroupList(groups);
+    el.importFavoritesField.hidden = !gifs.some((gif) => gif.favorite);
+    el.importFavorites.checked = true;
+    el.importDialog.showModal();
   } catch (error) {
     setStatus(`Import failed: ${error.message}`);
   } finally {
     el.groupImportInput.value = '';
-    setBusy(false);
   }
 }
 
-async function importGroupArchive(file) {
-  const entries = await readZipBlob(file);
-  const metadataBlob = findZipEntry(entries, 'metadata.json');
-  if (!metadataBlob) throw new Error('metadata.json is missing.');
+async function confirmImportArchive() {
+  if (!pendingImportArchive) return;
+  const selections = [...el.importGroupList.querySelectorAll('.import-group-row')]
+    .filter((row) => row.querySelector('input[type="checkbox"]').checked)
+    .map((row) => ({
+      sourceGroup: row.dataset.sourceGroup,
+      destinationGroup: importGroupName(row.querySelector('input[type="text"]').value),
+    }));
+  if (!selections.length) {
+    setStatus('Choose at least one group to import.');
+    return;
+  }
+  const includeFavorites = !el.importFavoritesField.hidden && el.importFavorites.checked;
+  const archive = pendingImportArchive;
+  el.importDialog.close();
+  pendingImportArchive = null;
+  setBusy(true);
+  try {
+    const imported = [];
+    for (const selection of selections) {
+      imported.push(await importGroupArchive(archive, { ...selection, includeFavorites }));
+    }
+    state.activeGroup = ALL_GROUPS;
+    await refresh();
+    renderSettingsEditor();
+    const count = imported.reduce((total, result) => total + result.count, 0);
+    setStatus(`Imported ${count} GIF${count === 1 ? '' : 's'} from ${imported.length} group${imported.length === 1 ? '' : 's'}.`);
+  } catch (error) {
+    setStatus(`Import failed: ${error.message}`);
+  } finally { setBusy(false); }
+}
 
-  const metadata = JSON.parse(await metadataBlob.text());
-  const gifs = Array.isArray(metadata.gifs) ? metadata.gifs : [];
-  if (!gifs.length) throw new Error('metadata.json has no GIF records.');
+function renderImportGroupList(groups) {
+  const rows = groups.map((group) => {
+    const row = document.createElement('div');
+    row.className = 'import-group-row';
+    row.dataset.sourceGroup = group;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.setAttribute('aria-label', `Import ${group}`);
+
+    const sourceName = document.createElement('span');
+    sourceName.className = 'import-group-source';
+    sourceName.textContent = group;
+
+    const destination = document.createElement('input');
+    destination.type = 'text';
+    destination.maxLength = 32;
+    destination.value = group;
+    destination.setAttribute('aria-label', `Destination name for ${group}`);
+
+    row.append(checkbox, sourceName, destination);
+    return row;
+  });
+  el.importGroupList.replaceChildren(...rows);
+}
+
+async function importGroupArchive(archive, options = {}) {
+  const { entries, metadata, file } = archive;
+  const gifs = archive.gifs.filter((gif) => !options.sourceGroup || importGroupName(gif.group || metadata.groupName || stripExtension(file.name)) === options.sourceGroup);
 
   const isLibraryBackup = metadata.scope === 'library';
-  const groupName = importGroupName(
-    metadata.groupName || stripExtension(file.name),
-  );
+  const groupName = options.destinationGroup || importGroupName(metadata.groupName || stripExtension(file.name));
   const importedGroups = new Set();
   let importedCount = 0;
 
@@ -1421,15 +1533,15 @@ async function importGroupArchive(file) {
       dimensions ||
       (await readImageSize(gifBlob).catch(() => ({ width: 0, height: 0 })));
     const now = Date.now();
-    const recordGroup = isLibraryBackup
+    const recordGroup = options.destinationGroup || (isLibraryBackup
       ? importGroupName(item.group || FALLBACK_GROUP)
-      : groupName;
+      : groupName);
     const record = {
       id: makeId(),
       title: cleanTitle(item.title || stripExtension(filename)),
       filename,
       group: recordGroup,
-      favorite: Boolean(item.favorite),
+      favorite: options.includeFavorites === false ? false : Boolean(item.favorite),
       createdAt: validTimestamp(item.createdAt, now),
       updatedAt: now,
       lastUsedAt: validTimestamp(item.lastUsedAt, 0),
