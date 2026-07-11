@@ -37,6 +37,8 @@ let suppressSettingsTabClick = false;
 let groupBarDrag = null;
 let suppressGroupBarClick = false;
 let thumbnailObserver = null;
+let libraryScrollIdleTimer = null;
+let libraryIsScrolling = false;
 const gridGifIndex = new Map();
 let pendingImportArchive = null;
 
@@ -94,6 +96,7 @@ const el = {
   progress: document.querySelector('#progress'),
   progressBar: document.querySelector('#progress .progress-track span'),
   searchInput: document.querySelector('#searchInput'),
+  libraryScroll: document.querySelector('.section-list'),
   sectionList: document.querySelector('#sectionList'),
   settingsTabList: document.querySelector('.settings-tabs'),
   settingsTabButtons: [...document.querySelectorAll('[data-settings-tab]')],
@@ -171,6 +174,15 @@ function wireEvents() {
   el.groupBar.addEventListener('pointerup', endGroupBarDrag);
   el.groupBar.addEventListener('pointercancel', endGroupBarDrag);
   new ResizeObserver(syncGroupBarOverflow).observe(el.groupBar);
+  el.libraryScroll.addEventListener('wheel', beginLibraryScroll, {
+    passive: true,
+  });
+  el.libraryScroll.addEventListener('scroll', beginLibraryScroll, {
+    passive: true,
+  });
+  el.libraryScroll.addEventListener('touchmove', beginLibraryScroll, {
+    passive: true,
+  });
   el.searchInput.addEventListener('input', () => {
     state.search = el.searchInput.value.trim().toLowerCase();
     render();
@@ -195,6 +207,21 @@ function wireEvents() {
     const files = [...(event.dataTransfer?.files || [])];
     importMediaFiles(files);
   });
+}
+
+function beginLibraryScroll() {
+  libraryIsScrolling = true;
+  pauseGridGifs();
+  clearTimeout(libraryScrollIdleTimer);
+  libraryScrollIdleTimer = setTimeout(() => {
+    libraryIsScrolling = false;
+  }, 140);
+}
+
+function pauseGridGifs() {
+  el.sectionList
+    .querySelectorAll('img[data-playing="true"]')
+    .forEach(pauseGridGif);
 }
 
 async function refresh() {
@@ -1638,6 +1665,7 @@ async function loadOrCreateGifThumbnail(id) {
 }
 
 async function playGridGif(id, image) {
+  if (libraryIsScrolling) return;
   image.dataset.playing = 'true';
   const blob = await loadGifBlob(id);
   if (!blob || image.dataset.playing !== 'true') return;

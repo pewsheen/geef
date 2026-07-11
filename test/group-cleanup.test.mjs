@@ -42,3 +42,14 @@ test('main add control only offers GIF and MP4 imports', async () => {
   assert.match(script, /function isVideoFile\(file\) \{\s+return file\.type === 'video\/mp4' \|\| \/\\\.mp4\$\/i\.test\(file\.name\);/);
   assert.doesNotMatch(script, /function isGroupArchiveFile/);
 });
+
+test('library scrolling suppresses hover playback and scroll anchoring', async () => {
+  const [script, css] = await Promise.all([
+    readFile(new URL('../src/sidepanel.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/sidepanel.css', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(script, /libraryScroll\.addEventListener\('scroll', beginLibraryScroll/);
+  assert.match(script, /function playGridGif\(id, image\) \{\s+if \(libraryIsScrolling\) return;/);
+  assert.match(css, /\.section-list \{[^}]*overflow-anchor: none;/s);
+});
