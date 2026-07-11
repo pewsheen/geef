@@ -1,0 +1,72 @@
+name: Package Chrome Web Store archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-extension-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Test and package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate manifest
+        run: node -e "JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8'))"
+
+      - name: Run tests
+        run: node --test test/*.test.mjs
+
+      - name: Build clean extension archive
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8')).version")"
+          archive="geef-${version}.zip"
+
+          mkdir -p package/store-assets
+          cp manifest.json LICENSE package/
+          cp -R src package/src
+          cp -R store-assets/icons package/store-assets/icons
+
+          (
+            cd package
+            zip -q -r "../${archive}" .
+          )
+
+          sha256sum "${archive}" > "${archive}.sha256"
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "### Chrome Web Store package"
+            echo
+            echo "- Version: \`${version}\`"
+            echo "- Archive: \`${archive}\`"
+            echo "- Contents:"
+            echo '```text'
+            unzip -Z1 "${archive}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload publish-ready archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: geef-${{ steps.package.outputs.version }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -21,6 +21,12 @@
   "action": {
     "default_title": "Geef"
   },
+  "icons": {
+    "16": "store-assets/icons/icon-16.png",
+    "32": "store-assets/icons/icon-32.png",
+    "48": "store-assets/icons/icon-48.png",
+    "128": "store-assets/icons/icon-128.png"
+  },
   "side_panel": {
     "default_path": "src/sidepanel.html"
   },
