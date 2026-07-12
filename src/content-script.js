@@ -16,12 +16,23 @@
   const SEND_BUTTON_SELECTORS = [
     '[data-testid*="send" i]',
     '[aria-label*="send" i]',
-    'button[type="submit"]',
     'button[title*="send" i]',
   ];
+  const COMPOSER_SELECTOR = [
+    "form",
+    '[data-testid*="composer" i]',
+    '[aria-label*="composer" i]',
+    '[class*="composer" i]',
+  ].join(",");
+  const MAX_DATA_URL_LENGTH = 70 * 1024 ** 2;
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "GEEF_INSERT_GIF") return false;
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (
+      sender.id !== chrome.runtime.id ||
+      message?.type !== "GEEF_INSERT_GIF"
+    ) {
+      return false;
+    }
 
     insertGif(message)
       .then((result) => sendResponse(result))
@@ -31,6 +42,14 @@
   });
 
   async function insertGif(message) {
+    if (
+      typeof message.dataUrl !== "string" ||
+      !message.dataUrl.startsWith("data:image/gif;base64,") ||
+      message.dataUrl.length > MAX_DATA_URL_LENGTH
+    ) {
+      return { ok: false, reason: "The GIF payload is invalid or too large." };
+    }
+
     const target = findEditableInput();
     if (!target)
       return { ok: false, reason: "No focused editable input was found." };
@@ -39,7 +58,7 @@
 
     const file = await dataUrlToFile(
       message.dataUrl,
-      message.filename || "geef.gif",
+      safeGifFilename(message.filename),
     );
     const pasted = pasteFile(target, file);
 
@@ -49,7 +68,7 @@
 
     if (message.submit) {
       await wait(80);
-      clickSendButton() || pressEnter(target);
+      clickSendButton(target) || pressEnter(target);
     }
 
     return {
@@ -127,9 +146,12 @@
     document.execCommand("insertText", false, text);
   }
 
-  function clickSendButton() {
+  function clickSendButton(target) {
+    const composer = target.closest?.(COMPOSER_SELECTOR);
+    if (!composer) return false;
+
     for (const selector of SEND_BUTTON_SELECTORS) {
-      const button = document.querySelector(selector);
+      const button = composer.querySelector(selector);
       if (button instanceof HTMLElement && !button.disabled) {
         button.click();
         return true;
@@ -137,6 +159,13 @@
     }
 
     return false;
+  }
+
+  function safeGifFilename(value) {
+    const filename = String(value || "geef.gif")
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
+      .slice(0, 120);
+    return /\.gif$/i.test(filename) ? filename : `${filename}.gif`;
   }
 
   function pressEnter(target) {
