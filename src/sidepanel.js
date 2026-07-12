@@ -26,6 +26,11 @@ const FAVORITES_GROUP = "__favorites__";
 const FALLBACK_GROUP = "General";
 const RECENT_LIMIT = 15;
 const ZIP_SCHEMA = "geef.group.v1";
+const MAX_ZIP_FILE_BYTES = 100 * 1024 ** 2;
+const MAX_ZIP_ENTRY_COUNT = 1000;
+const MAX_ZIP_METADATA_BYTES = 1024 ** 2;
+const MAX_ZIP_ENTRY_BYTES = 50 * 1024 ** 2;
+const MAX_ZIP_TOTAL_BYTES = 500 * 1024 ** 2;
 const DEFAULT_GRID_CELL_MIN = "110px";
 const GRID_CELL_MIN_SETTING = "gridCellMin";
 const SHOW_RECENTLY_SETTING = "showRecently";
@@ -1464,12 +1469,25 @@ async function exportAllGifs() {
 async function importGroupZip(file) {
   if (!file) return;
   try {
-    const entries = await readZipBlob(file);
-    const metadataBlob = findZipEntry(entries, "metadata.json");
-    if (!metadataBlob) throw new Error("metadata.json is missing.");
-    const metadata = JSON.parse(await metadataBlob.text());
+    const archive = await loadZipArchive(file);
+    const metadataEntry = findZipEntry(archive.zip, "metadata.json");
+    if (!metadataEntry) throw new Error("metadata.json is missing.");
+    const metadataBytes = await readZipEntryBytes(
+      metadataEntry,
+      MAX_ZIP_METADATA_BYTES,
+      archive.readBudget,
+    );
+    const metadata = JSON.parse(new TextDecoder().decode(metadataBytes));
+    if (metadata.schema !== ZIP_SCHEMA || metadata.version !== 1) {
+      throw new Error("The backup schema or version is not supported.");
+    }
     const gifs = Array.isArray(metadata.gifs) ? metadata.gifs : [];
     if (!gifs.length) throw new Error("metadata.json has no GIF records.");
+    if (gifs.length > MAX_ZIP_ENTRY_COUNT) {
+      throw new Error(
+        `The backup contains more than ${MAX_ZIP_ENTRY_COUNT} GIF records.`,
+      );
+    }
     const groups = [
       ...new Set(
         gifs.map((gif) =>
@@ -1479,7 +1497,7 @@ async function importGroupZip(file) {
         ),
       ),
     ];
-    pendingImportArchive = { entries, metadata, gifs, file, groups };
+    pendingImportArchive = { ...archive, metadata, gifs, file, groups };
     renderImportGroupList(groups);
     el.importFavoritesField.hidden = !gifs.some((gif) => gif.favorite);
     el.importFavorites.checked = true;
@@ -1562,7 +1580,7 @@ function renderImportGroupList(groups) {
 }
 
 async function importGroupArchive(archive, options = {}) {
-  const { entries, metadata, file } = archive;
+  const { metadata, file } = archive;
   const gifs = archive.gifs.filter(
     (gif) =>
       !options.sourceGroup ||
@@ -1582,8 +1600,13 @@ async function importGroupArchive(archive, options = {}) {
     const path = cleanZipLookupName(
       item.path || item.archivePath || `gifs/${item.filename || ""}`,
     );
-    const entryBlob = findZipEntry(entries, path);
+    const entryBlob = await readArchiveGifBlob(archive, path);
     if (!entryBlob) continue;
+
+    archive.importedBytes += entryBlob.size;
+    if (archive.importedBytes > MAX_ZIP_TOTAL_BYTES) {
+      throw new Error("The selected GIFs exceed the backup import size limit.");
+    }
 
     const filename = ensureGifFilename(
       item.filename || zipBasename(path) || `${item.title || "imported"}.gif`,
@@ -2009,219 +2032,136 @@ function readImageSize(blob) {
 }
 
 async function createZipBlob(entries) {
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-
-  for (const entry of entries) {
-    const nameBytes = encodeText(entry.name);
-    const originalBytes = new Uint8Array(await entry.blob.arrayBuffer());
-    const compressedBytes = await deflateRaw(originalBytes);
-    const shouldCompress =
-      compressedBytes && compressedBytes.length < originalBytes.length;
-    const dataBytes = shouldCompress ? compressedBytes : originalBytes;
-    const method = shouldCompress ? 8 : 0;
-    const crc = crc32(originalBytes);
-    const { dosDate, dosTime } = dateToDos(new Date());
-
-    const localHeader = new Uint8Array(30 + nameBytes.length);
-    const localView = new DataView(localHeader.buffer);
-    localView.setUint32(0, 0x04034b50, true);
-    localView.setUint16(4, 20, true);
-    localView.setUint16(6, 0x0800, true);
-    localView.setUint16(8, method, true);
-    localView.setUint16(10, dosTime, true);
-    localView.setUint16(12, dosDate, true);
-    localView.setUint32(14, crc, true);
-    localView.setUint32(18, dataBytes.length, true);
-    localView.setUint32(22, originalBytes.length, true);
-    localView.setUint16(26, nameBytes.length, true);
-    localView.setUint16(28, 0, true);
-    localHeader.set(nameBytes, 30);
-
-    const centralHeader = new Uint8Array(46 + nameBytes.length);
-    const centralView = new DataView(centralHeader.buffer);
-    centralView.setUint32(0, 0x02014b50, true);
-    centralView.setUint16(4, 20, true);
-    centralView.setUint16(6, 20, true);
-    centralView.setUint16(8, 0x0800, true);
-    centralView.setUint16(10, method, true);
-    centralView.setUint16(12, dosTime, true);
-    centralView.setUint16(14, dosDate, true);
-    centralView.setUint32(16, crc, true);
-    centralView.setUint32(20, dataBytes.length, true);
-    centralView.setUint32(24, originalBytes.length, true);
-    centralView.setUint16(28, nameBytes.length, true);
-    centralView.setUint16(30, 0, true);
-    centralView.setUint16(32, 0, true);
-    centralView.setUint16(34, 0, true);
-    centralView.setUint16(36, 0, true);
-    centralView.setUint32(38, 0, true);
-    centralView.setUint32(42, offset, true);
-    centralHeader.set(nameBytes, 46);
-
-    localParts.push(localHeader, dataBytes);
-    centralParts.push(centralHeader);
-    offset += localHeader.length + dataBytes.length;
-  }
-
-  const centralOffset = offset;
-  const centralSize = centralParts.reduce(
-    (total, part) => total + part.length,
-    0,
-  );
-  const end = new Uint8Array(22);
-  const endView = new DataView(end.buffer);
-  endView.setUint32(0, 0x06054b50, true);
-  endView.setUint16(4, 0, true);
-  endView.setUint16(6, 0, true);
-  endView.setUint16(8, entries.length, true);
-  endView.setUint16(10, entries.length, true);
-  endView.setUint32(12, centralSize, true);
-  endView.setUint32(16, centralOffset, true);
-  endView.setUint16(20, 0, true);
-
-  return new Blob([...localParts, ...centralParts, end], {
-    type: "application/zip",
+  const zip = new globalThis.JSZip();
+  for (const entry of entries) zip.file(entry.name, entry.blob);
+  return zip.generateAsync({
+    type: "blob",
+    mimeType: "application/zip",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+    streamFiles: true,
   });
 }
 
-async function readZipBlob(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const eocdOffset = findEndOfCentralDirectory(view);
-  const totalEntries = view.getUint16(eocdOffset + 10, true);
-  const centralOffset = view.getUint32(eocdOffset + 16, true);
-  const entries = new Map();
-  let offset = centralOffset;
+async function loadZipArchive(file) {
+  if (file.size > MAX_ZIP_FILE_BYTES) {
+    throw new Error("The ZIP file exceeds the 100 MiB import limit.");
+  }
+  if (typeof globalThis.JSZip !== "function") {
+    throw new Error("The ZIP library could not be loaded.");
+  }
 
-  for (let index = 0; index < totalEntries; index += 1) {
-    if (view.getUint32(offset, true) !== 0x02014b50)
-      throw new Error("ZIP central directory is invalid.");
-
-    const flags = view.getUint16(offset + 8, true);
-    const method = view.getUint16(offset + 10, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const localOffset = view.getUint32(offset + 42, true);
-    const name = decodeZipName(
-      bytes.slice(offset + 46, offset + 46 + nameLength),
-      flags,
+  const zip = await globalThis.JSZip.loadAsync(file, { createFolders: false });
+  const entries = Object.values(zip.files);
+  if (entries.length > MAX_ZIP_ENTRY_COUNT) {
+    throw new Error(
+      `The ZIP contains more than ${MAX_ZIP_ENTRY_COUNT} entries.`,
     );
-
-    if (!name.endsWith("/")) {
-      if (view.getUint32(localOffset, true) !== 0x04034b50)
-        throw new Error("ZIP local file header is invalid.");
-
-      const localNameLength = view.getUint16(localOffset + 26, true);
-      const localExtraLength = view.getUint16(localOffset + 28, true);
-      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-      const compressed = bytes.slice(dataStart, dataStart + compressedSize);
-      let data;
-
-      if (method === 0) {
-        data = compressed;
-      } else if (method === 8) {
-        data = await inflateRaw(compressed);
-      } else {
-        throw new Error(`Unsupported ZIP compression method ${method}.`);
-      }
-
-      entries.set(
-        cleanZipLookupName(name),
-        new Blob([data], { type: mimeForZipName(name) }),
-      );
-    }
-
-    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  if (
+    entries.some((entry) =>
+      isUnsafeZipPath(entry.unsafeOriginalName || entry.name),
+    )
+  ) {
+    throw new Error("The ZIP contains an unsafe entry path.");
   }
 
-  return entries;
+  return {
+    zip,
+    entryCache: new Map(),
+    readBudget: { used: 0, max: MAX_ZIP_TOTAL_BYTES },
+    importedBytes: 0,
+  };
 }
 
-async function deflateRaw(bytes) {
-  if (typeof CompressionStream !== "function") return null;
-  try {
-    const stream = new Blob([bytes])
-      .stream()
-      .pipeThrough(new CompressionStream("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
-    return null;
-  }
-}
-
-async function inflateRaw(bytes) {
-  if (typeof DecompressionStream !== "function")
-    throw new Error("This browser cannot import compressed ZIP entries.");
-  try {
-    const stream = new Blob([bytes])
-      .stream()
-      .pipeThrough(new DecompressionStream("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
-    throw new Error("Could not decompress ZIP entry.");
-  }
-}
-
-function findEndOfCentralDirectory(view) {
-  const lowerBound = Math.max(0, view.byteLength - 22 - 0xffff);
-  for (let offset = view.byteLength - 22; offset >= lowerBound; offset -= 1) {
-    if (view.getUint32(offset, true) === 0x06054b50) return offset;
-  }
-  throw new Error("Not a ZIP file.");
-}
-
-function crc32(bytes) {
-  let crc = -1;
-  for (const byte of bytes) {
-    crc = (crc >>> 8) ^ crc32Table()[(crc ^ byte) & 0xff];
-  }
-  return (crc ^ -1) >>> 0;
-}
-
-let cachedCrc32Table;
-function crc32Table() {
-  if (cachedCrc32Table) return cachedCrc32Table;
-
-  cachedCrc32Table = new Uint32Array(256);
-  for (let index = 0; index < 256; index += 1) {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-    cachedCrc32Table[index] = value >>> 0;
-  }
-  return cachedCrc32Table;
-}
-
-function dateToDos(date) {
-  const year = Math.max(1980, date.getFullYear());
-  const dosDate =
-    ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  const dosTime =
-    (date.getHours() << 11) |
-    (date.getMinutes() << 5) |
-    Math.floor(date.getSeconds() / 2);
-  return { dosDate, dosTime };
-}
-
-function encodeText(text) {
-  return new TextEncoder().encode(text);
-}
-
-function decodeZipName(bytes) {
-  return new TextDecoder().decode(bytes);
-}
-
-function findZipEntry(entries, name) {
+function findZipEntry(zip, name) {
   const target = cleanZipLookupName(name).toLowerCase();
-  for (const [entryName, blob] of entries) {
-    if (entryName.toLowerCase() === target) return blob;
+  for (const [entryName, entry] of Object.entries(zip.files)) {
+    if (!entry.dir && cleanZipLookupName(entryName).toLowerCase() === target) {
+      return entry;
+    }
   }
   return null;
+}
+
+function readZipEntryBytes(entry, maxBytes, budget) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+    const stream = entry.internalStream("uint8array");
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      stream.pause();
+      reject(error);
+    };
+
+    stream
+      .on("data", (chunk) => {
+        if (settled) return;
+        size += chunk.byteLength;
+        budget.used += chunk.byteLength;
+        if (size > maxBytes) {
+          fail(new Error(`ZIP entry ${entry.name} exceeds its size limit.`));
+          return;
+        }
+        if (budget.used > budget.max) {
+          fail(new Error("The ZIP exceeds the total expanded size limit."));
+          return;
+        }
+        chunks.push(chunk);
+      })
+      .on("error", fail)
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        resolve(bytes);
+      })
+      .resume();
+  });
+}
+
+async function readArchiveGifBlob(archive, path) {
+  const key = cleanZipLookupName(path).toLowerCase();
+  if (archive.entryCache.has(key)) return archive.entryCache.get(key);
+
+  const entry = findZipEntry(archive.zip, path);
+  if (!entry) return null;
+  const bytes = await readZipEntryBytes(
+    entry,
+    MAX_ZIP_ENTRY_BYTES,
+    archive.readBudget,
+  );
+  if (!hasGifSignature(bytes)) {
+    throw new Error(`ZIP entry ${entry.name} is not a GIF file.`);
+  }
+
+  const blob = new Blob([bytes], { type: "image/gif" });
+  archive.entryCache.set(key, blob);
+  return blob;
+}
+
+function hasGifSignature(bytes) {
+  if (bytes.byteLength < 6) return false;
+  const signature = String.fromCharCode(...bytes.subarray(0, 6));
+  return signature === "GIF87a" || signature === "GIF89a";
+}
+
+function isUnsafeZipPath(name) {
+  const normalized = String(name || "").replace(/\\/g, "/");
+  return (
+    normalized.includes("\0") ||
+    normalized.startsWith("/") ||
+    /^[a-z]:\//i.test(normalized) ||
+    normalized.split("/").includes("..")
+  );
 }
 
 function cleanZipLookupName(name) {
@@ -2230,12 +2170,6 @@ function cleanZipLookupName(name) {
 
 function zipBasename(path) {
   return cleanZipLookupName(path).split("/").filter(Boolean).pop() || "";
-}
-
-function mimeForZipName(name) {
-  if (/\.json$/i.test(name)) return "application/json";
-  if (/\.gif$/i.test(name)) return "image/gif";
-  return "application/octet-stream";
 }
 
 function importGroupName(value) {

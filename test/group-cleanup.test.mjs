@@ -40,10 +40,9 @@ test("main add control only offers GIF and MP4 imports", async () => {
   ]);
 
   assert.match(html, /accept="image\/gif,video\/mp4,\.gif,\.mp4"/);
-  assert.match(
-    script,
-    /function isVideoFile\(file\) \{\s+return file\.type === 'video\/mp4' \|\| \/\\\.mp4\$\/i\.test\(file\.name\);/,
-  );
+  assert.match(script, /function isVideoFile\(file\)/);
+  assert.match(script, /file\.type === ["']video\/mp4["']/);
+  assert.match(script, /\/\\\.mp4\$\/i\.test\(file\.name\)/);
   assert.doesNotMatch(script, /function isGroupArchiveFile/);
 });
 
@@ -55,7 +54,7 @@ test("library scrolling suppresses hover playback and scroll anchoring", async (
 
   assert.match(
     script,
-    /libraryScroll\.addEventListener\('scroll', beginLibraryScroll/,
+    /libraryScroll\.addEventListener\(["']scroll["'], beginLibraryScroll/,
   );
   assert.match(
     script,
