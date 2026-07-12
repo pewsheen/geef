@@ -14,6 +14,17 @@
   ];
 
   const MAX_DATA_URL_LENGTH = 70 * 1024 ** 2;
+  let lastEditableInput = isEditable(document.activeElement)
+    ? document.activeElement
+    : null;
+
+  document.addEventListener(
+    "focusin",
+    (event) => {
+      if (isEditable(event.target)) lastEditableInput = event.target;
+    },
+    true,
+  );
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (
@@ -64,6 +75,10 @@
   function findEditableInput() {
     const active = document.activeElement;
     if (isEditable(active)) return active;
+
+    if (lastEditableInput?.isConnected && isEditable(lastEditableInput)) {
+      return lastEditableInput;
+    }
 
     for (const selector of EDITABLE_INPUT_SELECTORS) {
       const found = document.querySelector(selector);

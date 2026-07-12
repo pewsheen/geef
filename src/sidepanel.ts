@@ -1,7 +1,9 @@
+import JSZip from "jszip";
 import {
   blobToDataUrl,
   bytesToHuman,
   deleteGif,
+  estimateStorage,
   getSetting,
   getGifBlob,
   getGifThumbnail,
@@ -11,15 +13,30 @@ import {
   makeId,
   removeGroup,
   renameGroup,
+  requestPersistentStorage,
   saveGif,
   saveGifThumbnail,
   saveGroups,
   saveSetting,
   touchGif,
   updateGif,
-} from "./store.js";
-import { convertVideoToGif } from "./gif-encoder.js";
-import { pruneEmptyGroups } from "./group-utils.mjs";
+} from "./store.ts";
+import { convertVideoToGif } from "./gif-encoder.ts";
+import { pruneEmptyGroups } from "./group-utils.ts";
+import {
+  isGifFile,
+  isImportableMediaFile,
+  isVideoFile,
+} from "./media-utils.ts";
+import {
+  matchesSiteAccessTarget,
+  sitePermissionPattern,
+} from "./site-access.ts";
+import {
+  hasStorageCapacity,
+  isStorageCapacityError,
+  remainingStorageBytes,
+} from "./storage-capacity.ts";
 
 const ALL_GROUPS = "__all__";
 const FAVORITES_GROUP = "__favorites__";
@@ -59,6 +76,12 @@ const state = {
   objectUrls: new Map(),
   thumbnailJobs: new Map(),
   previewBlobs: new Map(),
+  siteAccess: {
+    granted: PREVIEW_MODE,
+    label: "this site",
+    pattern: null,
+    tabId: null,
+  },
 };
 
 const el = {
@@ -74,16 +97,21 @@ const el = {
   groupExportList: document.querySelector("#groupExportList"),
   groupImportButton: document.querySelector("#groupImportButton"),
   groupImportInput: document.querySelector("#groupImportInput"),
+  grantSiteAccessButton: document.querySelector("#grantSiteAccessButton"),
   groupList: document.querySelector("#groupList"),
   exportAllButton: document.querySelector("#exportAllButton"),
   gridCellMinInput: document.querySelector("#gridCellMinInput"),
   gridCellMinApplyButton: document.querySelector("#gridCellMinApplyButton"),
   showRecentlyInput: document.querySelector("#showRecentlyInput"),
+  siteAccessMessage: document.querySelector("#siteAccessMessage"),
+  siteAccessWarning: document.querySelector("#siteAccessWarning"),
   gridCellPreviewTile: document.querySelector("#gridCellPreviewTile"),
   gridCellPreviewLabel: document.querySelector("#gridCellPreviewLabel"),
   groupPanel: document.querySelector("#groupPanel"),
   backupPanel: document.querySelector("#backupPanel"),
   dataPanel: document.querySelector("#dataPanel"),
+  dataCapacityMessage: document.querySelector("#dataCapacityMessage"),
+  dataCapacityUsage: document.querySelector("#dataCapacityUsage"),
   dataGifUsage: document.querySelector("#dataGifUsage"),
   dataThumbnailUsage: document.querySelector("#dataThumbnailUsage"),
   dataLibraryUsage: document.querySelector("#dataLibraryUsage"),
@@ -117,6 +145,7 @@ const el = {
 
 wireEvents();
 if (PREVIEW_MODE) enableUiInspector();
+else refreshSiteAccess();
 refresh();
 
 function wireEvents() {
@@ -124,7 +153,7 @@ function wireEvents() {
   el.fileInput.addEventListener("change", () =>
     importMediaFiles(el.fileInput.files),
   );
-  el.groupEditButton.addEventListener("click", openSettingsDialog);
+  el.groupEditButton.addEventListener("click", () => openSettingsDialog());
   el.groupAddButton.addEventListener("click", addGroupFromDialog);
   el.groupAddInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
@@ -134,6 +163,7 @@ function wireEvents() {
   el.groupImportButton.addEventListener("click", () =>
     el.groupImportInput.click(),
   );
+  el.grantSiteAccessButton.addEventListener("click", grantSiteAccess);
   el.groupImportInput.addEventListener("change", () =>
     importGroupZip(el.groupImportInput.files?.[0]),
   );
@@ -484,13 +514,14 @@ async function importMediaFiles(files) {
   const selectedFiles = [...(files || [])];
   const mediaFiles = selectedFiles.filter(isImportableMediaFile);
   if (!mediaFiles.length) {
-    setStatus("Choose a GIF or MP4 file.");
+    setStatus("Choose a GIF, MP4, or WebM file.");
     return;
   }
 
   let added = 0;
   let converted = 0;
 
+  if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
     for (const file of mediaFiles) {
@@ -520,24 +551,14 @@ async function importMediaFiles(files) {
     );
     await refresh();
   } catch (error) {
-    setStatus(`Import failed: ${error.message}`);
+    if (!(await showStorageCapacityHelp(error))) {
+      setStatus(`Import failed: ${error.message}`);
+    }
   } finally {
     el.fileInput.value = "";
     setProgress(null);
     setBusy(false);
   }
-}
-
-function isImportableMediaFile(file) {
-  return isGifFile(file) || isVideoFile(file);
-}
-
-function isGifFile(file) {
-  return file.type === "image/gif" || /\.gif$/i.test(file.name);
-}
-
-function isVideoFile(file) {
-  return file.type === "video/mp4" || /\.mp4$/i.test(file.name);
 }
 
 async function saveImportedGif(blob, filename) {
@@ -571,6 +592,7 @@ async function saveImportedGif(blob, filename) {
   const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
     () => null,
   );
+  await ensureStorageCapacity(gifBlob.size + (thumbnailBlob?.size || 0));
   await saveGif(record, gifBlob, thumbnailBlob);
 }
 
@@ -682,6 +704,14 @@ async function removeGif(id) {
 
 async function pasteGif(id) {
   if (!id) return;
+  if (!PREVIEW_MODE && !state.siteAccess.granted) {
+    showSiteAccessWarning(
+      `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+      Boolean(state.siteAccess.pattern),
+    );
+    setStatus("Grant site access before pasting.");
+    return;
+  }
   const gif = state.gifs.find((item) => item.id === id);
   const blob = await loadGifBlob(id);
   if (!gif || !blob) return;
@@ -826,14 +856,14 @@ function positionInspectLabel(label, element) {
   label.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
 
-function openSettingsDialog() {
+function openSettingsDialog(initialTab = "appearance") {
   renderSettingsEditor();
   el.groupAddInput.value = "";
   el.gridCellMinInput.value = state.gridCellMin || "";
   el.showRecentlyInput.checked = state.showRecently;
   updateGridCellPreview();
-  setSettingsTab("appearance");
-  el.settingsDialog.showModal();
+  setSettingsTab(initialTab);
+  if (!el.settingsDialog.open) el.settingsDialog.showModal();
 }
 
 function setSettingsTab(tab) {
@@ -994,10 +1024,21 @@ function endGroupBarDrag(event) {
 }
 
 async function renderDataPanel() {
-  const usage = PREVIEW_MODE ? previewLibraryUsage() : await getLibraryUsage();
-  el.dataGifUsage.textContent = `${bytesToHuman(usage.gifBytes)} · ${gifCountText(usage.gifCount)}`;
-  el.dataThumbnailUsage.textContent = bytesToHuman(usage.thumbnailBytes);
-  el.dataLibraryUsage.textContent = bytesToHuman(usage.totalBytes);
+  const [usage, estimate] = await Promise.all([
+    PREVIEW_MODE ? previewLibraryUsage() : getLibraryUsage(),
+    PREVIEW_MODE ? null : estimateStorage().catch(() => null),
+  ]);
+  const gifUsageText = `${bytesToHuman(usage.gifBytes)} · ${gifCountText(usage.gifCount)}`;
+  const thumbnailUsageText = bytesToHuman(usage.thumbnailBytes);
+  const libraryUsageText = bytesToHuman(usage.totalBytes);
+
+  el.dataGifUsage.textContent = gifUsageText;
+  el.dataGifUsage.title = gifUsageText;
+  el.dataThumbnailUsage.textContent = thumbnailUsageText;
+  el.dataThumbnailUsage.title = thumbnailUsageText;
+  el.dataLibraryUsage.textContent = libraryUsageText;
+  el.dataLibraryUsage.title = libraryUsageText;
+  renderStorageCapacity(estimate);
 
   if (!usage.groups.length) {
     const empty = document.createElement("div");
@@ -1031,6 +1072,45 @@ async function renderDataPanel() {
       return row;
     }),
   );
+}
+
+function renderStorageCapacity(estimate) {
+  if (PREVIEW_MODE) {
+    el.dataCapacityUsage.textContent = "Preview mode";
+    el.dataCapacityMessage.textContent =
+      "Storage capacity is available when the extension is loaded in Chrome.";
+    return;
+  }
+
+  if (estimate?.quota) {
+    el.dataCapacityUsage.textContent = `${bytesToHuman(estimate.usage)} of ${bytesToHuman(estimate.quota)}`;
+    el.dataCapacityMessage.textContent = `${bytesToHuman(remainingStorageBytes(estimate))} currently available. Chrome may adjust this quota as disk usage changes.`;
+    return;
+  }
+
+  el.dataCapacityUsage.textContent = "Estimate unavailable";
+  el.dataCapacityMessage.textContent =
+    "Chrome did not report a storage quota. Imports will still report if space runs out.";
+}
+
+async function ensureStorageCapacity(additionalBytes) {
+  if (PREVIEW_MODE) return;
+  const estimate = await estimateStorage().catch(() => null);
+  if (hasStorageCapacity(estimate, additionalBytes)) return;
+
+  const error = new Error(
+    "The library is too close to Chrome's current storage limit.",
+  );
+  error.name = "GeefStorageCapacityError";
+  throw error;
+}
+
+async function showStorageCapacityHelp(error) {
+  if (!isStorageCapacityError(error)) return false;
+  if (!PREVIEW_MODE) await refresh().catch(() => {});
+  setStatus("Not enough browser storage. Review usage and remove local data.");
+  openSettingsDialog("data");
+  return true;
 }
 
 async function removeDataGifs(group = null) {
@@ -1519,6 +1599,7 @@ async function confirmImportArchive() {
   const archive = pendingImportArchive;
   el.importDialog.close();
   pendingImportArchive = null;
+  if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
     const imported = [];
@@ -1535,7 +1616,9 @@ async function confirmImportArchive() {
       `Imported ${count} GIF${count === 1 ? "" : "s"} from ${imported.length} group${imported.length === 1 ? "" : "s"}.`,
     );
   } catch (error) {
-    setStatus(`Import failed: ${error.message}`);
+    if (!(await showStorageCapacityHelp(error))) {
+      setStatus(`Import failed: ${error.message}`);
+    }
   } finally {
     setBusy(false);
   }
@@ -1634,6 +1717,7 @@ async function importGroupArchive(archive, options = {}) {
       const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
         () => null,
       );
+      await ensureStorageCapacity(gifBlob.size + (thumbnailBlob?.size || 0));
       await saveGif(record, gifBlob, thumbnailBlob);
     }
     importedGroups.add(recordGroup);
@@ -1711,7 +1795,11 @@ async function loadOrCreateGifThumbnail(id) {
   if (!gifBlob) return null;
 
   const thumbnailBlob = await createStaticThumbnailBlob(gifBlob);
-  await saveGifThumbnail(id, thumbnailBlob);
+  try {
+    await saveGifThumbnail(id, thumbnailBlob);
+  } catch (error) {
+    if (!isStorageCapacityError(error)) throw error;
+  }
   return thumbnailBlob;
 }
 
@@ -1879,18 +1967,32 @@ function escapeXml(value) {
 }
 
 async function pasteToActiveTab(payload) {
-  const [tab] = await chrome.tabs.query({
-    active: true,
-    lastFocusedWindow: true,
-  });
+  const tab = await activeSiteTab();
   if (!tab?.id) throw new Error("No active tab found.");
 
-  await chrome.scripting
-    .executeScript({
-      target: { tabId: tab.id },
-      files: ["src/content-script.js"],
-    })
-    .catch(() => {});
+  const pattern = sitePermissionPattern(tab.url);
+  if (!pattern) {
+    state.siteAccess.granted = false;
+    showSiteAccessWarning(
+      "Reopen Geef from the extension toolbar on the page you want to use.",
+      false,
+    );
+    throw new Error("Geef cannot access the active page.");
+  }
+
+  const granted = await chrome.permissions.contains({ origins: [pattern] });
+  if (!granted) {
+    state.siteAccess.granted = false;
+    state.siteAccess.pattern = pattern;
+    state.siteAccess.label = new URL(tab.url).hostname;
+    showSiteAccessWarning(
+      `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+      true,
+    );
+    throw new Error("Grant site access before pasting.");
+  }
+
+  await injectContentScript(tab.id);
 
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tab.id, payload, (response) => {
@@ -1906,6 +2008,169 @@ async function pasteToActiveTab(payload) {
       resolve(response);
     });
   });
+}
+
+async function refreshSiteAccess() {
+  try {
+    const tab = await activeSiteTab();
+    const pattern = sitePermissionPattern(tab?.url);
+    state.siteAccess.tabId = tab?.id || null;
+    state.siteAccess.pattern = pattern;
+
+    if (!pattern) {
+      state.siteAccess.granted = false;
+      state.siteAccess.label = "this page";
+      showSiteAccessWarning(
+        "Reopen Geef from the extension toolbar on the page you want to use.",
+        false,
+      );
+      return;
+    }
+
+    state.siteAccess.label = new URL(tab.url).hostname;
+    state.siteAccess.granted = await chrome.permissions.contains({
+      origins: [pattern],
+    });
+
+    if (!state.siteAccess.granted) {
+      showSiteAccessWarning(
+        `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+        true,
+      );
+      return;
+    }
+
+    await registerSiteContentScript(pattern);
+    await injectContentScript(tab.id);
+    hideSiteAccessWarning();
+  } catch (_error) {
+    state.siteAccess.granted = false;
+    showSiteAccessWarning("Could not check access to the active page.", false);
+  }
+}
+
+async function activeSiteTab() {
+  const tab = await activeBrowserTab();
+  if (!tab?.id || tab.url) return tab;
+
+  const { siteAccessLaunch } =
+    await chrome.storage.session.get("siteAccessLaunch");
+  if (
+    siteAccessLaunch?.tabId === tab.id &&
+    typeof siteAccessLaunch.url === "string"
+  ) {
+    return { ...tab, url: siteAccessLaunch.url };
+  }
+
+  return tab;
+}
+
+async function activeBrowserTab() {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return tab;
+}
+
+async function grantSiteAccess() {
+  const pattern = state.siteAccess.pattern;
+  const tabId = state.siteAccess.tabId;
+  if (!pattern || !tabId) {
+    setStatus("Reopen Geef from the toolbar on the page you want to use.");
+    return;
+  }
+
+  try {
+    const activeTab = await activeBrowserTab();
+    const activeUrl = await currentTabUrl(activeTab);
+
+    if (!matchesSiteAccessTarget({ tabId, pattern }, activeTab, activeUrl)) {
+      state.siteAccess.granted = false;
+      showSiteAccessWarning(
+        `The active page is no longer ${state.siteAccess.label}. Open Geef from the extension toolbar on the page you want to use.`,
+        false,
+      );
+      setStatus(
+        "Site access was not requested because the active page changed.",
+      );
+      return;
+    }
+
+    const granted = await chrome.permissions.request({ origins: [pattern] });
+    if (!granted) {
+      setStatus(`Access to ${state.siteAccess.label} was not granted.`);
+      return;
+    }
+
+    state.siteAccess.granted = true;
+    await registerSiteContentScript(pattern);
+    await injectContentScript(activeTab.id);
+    hideSiteAccessWarning();
+    setStatus(`Paste enabled on ${state.siteAccess.label}.`);
+  } catch (error) {
+    setStatus(error.message || "Could not request site access.");
+  }
+}
+
+async function currentTabUrl(tab) {
+  if (sitePermissionPattern(tab?.url)) return tab.url;
+  if (!tab?.id) return null;
+
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => location.href,
+    });
+    return typeof result?.result === "string" ? result.result : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function showSiteAccessWarning(message, canGrant) {
+  el.siteAccessMessage.textContent = message;
+  el.grantSiteAccessButton.hidden = !canGrant;
+  el.siteAccessWarning.hidden = false;
+}
+
+function hideSiteAccessWarning() {
+  el.siteAccessWarning.hidden = true;
+}
+
+async function injectContentScript(tabId) {
+  if (!tabId) throw new Error("No active tab found.");
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["src/content-script.js"],
+  });
+}
+
+async function registerSiteContentScript(pattern) {
+  const id = siteContentScriptId(pattern);
+  const registered = await chrome.scripting.getRegisteredContentScripts({
+    ids: [id],
+  });
+  if (registered.length) return;
+
+  await chrome.scripting.registerContentScripts([
+    {
+      id,
+      matches: [pattern],
+      js: ["src/content-script.js"],
+      persistAcrossSessions: true,
+      runAt: "document_start",
+    },
+  ]);
+}
+
+function siteContentScriptId(pattern) {
+  let hash = 2166136261;
+  for (const char of pattern) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `geef_site_${(hash >>> 0).toString(36)}`;
 }
 
 function filteredByGroup(gifs) {
@@ -2021,7 +2286,7 @@ function readImageSize(blob) {
 }
 
 async function createZipBlob(entries) {
-  const zip = new globalThis.JSZip();
+  const zip = new JSZip();
   for (const entry of entries) zip.file(entry.name, entry.blob);
   return zip.generateAsync({
     type: "blob",
@@ -2036,11 +2301,7 @@ async function loadZipArchive(file) {
   if (file.size > MAX_ZIP_FILE_BYTES) {
     throw new Error("The ZIP file exceeds the 100 MiB import limit.");
   }
-  if (typeof globalThis.JSZip !== "function") {
-    throw new Error("The ZIP library could not be loaded.");
-  }
-
-  const zip = await globalThis.JSZip.loadAsync(file, { createFolders: false });
+  const zip = await JSZip.loadAsync(file, { createFolders: false });
   const entries = Object.values(zip.files);
   if (entries.length > MAX_ZIP_ENTRY_COUNT) {
     throw new Error(

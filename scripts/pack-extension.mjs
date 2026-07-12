@@ -9,7 +9,8 @@ import { ZipArchive } from "archiver";
 const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const manifestPath = join(projectRoot, "manifest.json");
 const packagePath = join(projectRoot, "package.json");
-const outputDirectory = join(projectRoot, "dist");
+const sourceDirectory = join(projectRoot, "dist");
+const outputDirectory = join(projectRoot, "release");
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
@@ -23,18 +24,13 @@ if (manifest.version !== packageJson.version) {
 const archiveName = `geef-${manifest.version}.zip`;
 const archivePath = join(outputDirectory, archiveName);
 const checksumPath = `${archivePath}.sha256`;
-const packageEntries = [
-  { source: "manifest.json", destination: "manifest.json" },
-  { source: "LICENSE", destination: "LICENSE" },
-  { source: "src", destination: "src", directory: true },
-  {
-    source: "store-assets/icons",
-    destination: "store-assets/icons",
-    directory: true,
-  },
-];
+const builtManifestPath = join(sourceDirectory, "manifest.json");
+const builtManifest = JSON.parse(await readFile(builtManifestPath, "utf8"));
+if (builtManifest.version !== manifest.version) {
+  throw new Error("The built manifest version does not match the source.");
+}
 
-await validateManifestFiles(manifest);
+await validateManifestFiles(builtManifest, sourceDirectory);
 await mkdir(outputDirectory, { recursive: true });
 await rm(archivePath, { force: true });
 await rm(checksumPath, { force: true });
@@ -49,14 +45,7 @@ const completed = new Promise((resolveCompleted, rejectCompleted) => {
 
 zip.pipe(output);
 
-for (const entry of packageEntries) {
-  const sourcePath = join(projectRoot, entry.source);
-  if (entry.directory) {
-    zip.directory(sourcePath, entry.destination);
-  } else {
-    zip.file(sourcePath, { name: entry.destination });
-  }
-}
+zip.directory(sourceDirectory, false);
 
 await zip.finalize();
 await completed;
@@ -73,9 +62,9 @@ console.log(
   `Created ${relative(projectRoot, archivePath)} (${formatBytes(archiveStats.size)})`,
 );
 console.log(`SHA-256 ${checksum}`);
-console.log("Included: manifest.json, LICENSE, src/, store-assets/icons/");
+console.log("Included: built extension from dist/");
 
-async function validateManifestFiles(value) {
+async function validateManifestFiles(value, rootDirectory) {
   const referencedPaths = new Set([
     value.background?.service_worker,
     value.side_panel?.default_path,
@@ -86,10 +75,10 @@ async function validateManifestFiles(value) {
   ]);
 
   for (const referencedPath of [...referencedPaths].filter(Boolean)) {
-    const absolutePath = resolve(projectRoot, referencedPath);
-    const projectPrefix = `${projectRoot}${sep}`;
+    const absolutePath = resolve(rootDirectory, referencedPath);
+    const projectPrefix = `${rootDirectory}${sep}`;
     if (
-      absolutePath !== projectRoot &&
+      absolutePath !== rootDirectory &&
       !absolutePath.startsWith(projectPrefix)
     ) {
       throw new Error(`Manifest path escapes the project: ${referencedPath}`);

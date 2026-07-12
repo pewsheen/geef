@@ -2,7 +2,7 @@ import {
   cleanGroupName,
   normalizeGroups,
   pruneEmptyGroups,
-} from "./group-utils.mjs";
+} from "./group-utils.ts";
 
 const DB_NAME = "geef";
 const DB_VERSION = 3;

@@ -6,7 +6,7 @@ import {
   cleanGroupName,
   normalizeGroups,
   pruneEmptyGroups,
-} from "../src/group-utils.mjs";
+} from "../src/group-utils.ts";
 
 test("removes groups that no longer have GIFs", () => {
   const groups = ["Team", "Work", "Reactions"];
@@ -33,22 +33,23 @@ test("keeps reserved labels out of a pruned group list", () => {
   );
 });
 
-test("main add control only offers GIF and MP4 imports", async () => {
+test("main add control offers GIF, MP4, and WebM imports", async () => {
   const [html, script] = await Promise.all([
     readFile(new URL("../src/sidepanel.html", import.meta.url), "utf8"),
-    readFile(new URL("../src/sidepanel.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/sidepanel.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /accept="image\/gif,video\/mp4,\.gif,\.mp4"/);
-  assert.match(script, /function isVideoFile\(file\)/);
-  assert.match(script, /file\.type === ["']video\/mp4["']/);
-  assert.match(script, /\/\\\.mp4\$\/i\.test\(file\.name\)/);
+  assert.match(
+    html,
+    /accept="image\/gif,video\/mp4,video\/webm,\.gif,\.mp4,\.webm"/,
+  );
+  assert.match(script, /isVideoFile/);
   assert.doesNotMatch(script, /function isGroupArchiveFile/);
 });
 
 test("library scrolling suppresses hover playback and scroll anchoring", async () => {
   const [script, css] = await Promise.all([
-    readFile(new URL("../src/sidepanel.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/sidepanel.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/sidepanel.css", import.meta.url), "utf8"),
   ]);
 

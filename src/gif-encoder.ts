@@ -7,6 +7,9 @@ const DEFAULT_OPTIONS = {
   dither: true,
 };
 
+const TRANSPARENT_ALPHA_THRESHOLD = 128;
+const TRANSPARENT_PALETTE_INDEX = 0;
+
 export async function convertVideoToGif(
   file,
   options = {},
@@ -51,6 +54,7 @@ export async function convertVideoToGif(
         Math.max(0, video.duration - 0.05),
       );
       await seekVideo(video, time);
+      context.clearRect(0, 0, size.width, size.height);
       context.drawImage(video, 0, 0, size.width, size.height);
 
       const imageData = context.getImageData(0, 0, size.width, size.height);
@@ -62,27 +66,64 @@ export async function convertVideoToGif(
       onProgress(((index + 1) / frameCount) * 0.75);
     }
 
-    const palette = buildAdaptivePalette(
-      frames.map((frame) => frame.rgba),
-      settings.paletteSize,
+    const bytes = encodeRgbaFramesToGif(
+      size.width,
+      size.height,
+      frames,
+      settings,
+      (progress) => onProgress(0.8 + progress * 0.2),
     );
-    const indexedFrames = frames.map((frame, index) => {
-      const pixels = mapPixelsToPalette(
-        frame.rgba,
-        size.width,
-        size.height,
-        palette,
-        settings.dither,
-      );
-      onProgress(0.8 + ((index + 1) / frames.length) * 0.2);
-      return { pixels, delay: frame.delay };
-    });
-
-    const bytes = encodeGif(size.width, size.height, indexedFrames, palette);
     return new Blob([bytes], { type: "image/gif" });
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export function encodeRgbaFramesToGif(
+  width,
+  height,
+  frames,
+  options = {},
+  onProgress = () => {},
+) {
+  const settings = { ...DEFAULT_OPTIONS, ...options };
+  const hasTransparency = frames.some((frame) =>
+    hasTransparentPixels(frame.rgba),
+  );
+  const transparentIndex = hasTransparency ? TRANSPARENT_PALETTE_INDEX : null;
+  const colorLimit = Math.max(
+    1,
+    Math.min(256, settings.paletteSize || 256) - (hasTransparency ? 1 : 0),
+  );
+  const opaquePalette = buildAdaptivePalette(
+    frames.map((frame) => frame.rgba),
+    colorLimit,
+  );
+  const palette = hasTransparency
+    ? [[0, 0, 0], ...opaquePalette]
+    : opaquePalette;
+  const indexedFrames = frames.map((frame, index) => {
+    const pixels = mapPixelsToPalette(
+      frame.rgba,
+      width,
+      height,
+      palette,
+      settings.dither,
+      transparentIndex,
+    );
+    onProgress((index + 1) / frames.length);
+    return { pixels, delay: frame.delay };
+  });
+
+  return encodeGif(width, height, indexedFrames, palette, transparentIndex);
+}
+
+function hasTransparentPixels(rgba) {
+  for (let source = 3; source < rgba.length; source += 4) {
+    if (rgba[source] < TRANSPARENT_ALPHA_THRESHOLD) return true;
+  }
+
+  return false;
 }
 
 function fitSize(width, height, maxWidth, maxHeight) {
@@ -156,7 +197,7 @@ function seekVideo(video, time) {
 }
 
 function buildAdaptivePalette(frameRgbaList, maxColors) {
-  const safeMaxColors = Math.max(2, Math.min(256, maxColors || 256));
+  const safeMaxColors = Math.max(1, Math.min(256, maxColors || 256));
   const counts = new Uint32Array(32768);
   const redSums = new Float64Array(32768);
   const greenSums = new Float64Array(32768);
@@ -165,9 +206,11 @@ function buildAdaptivePalette(frameRgbaList, maxColors) {
   for (const rgba of frameRgbaList) {
     for (let source = 0; source < rgba.length; source += 4) {
       const alpha = rgba[source + 3];
-      const red = alpha ? rgba[source] : 255;
-      const green = alpha ? rgba[source + 1] : 255;
-      const blue = alpha ? rgba[source + 2] : 255;
+      if (alpha < TRANSPARENT_ALPHA_THRESHOLD) continue;
+
+      const red = rgba[source];
+      const green = rgba[source + 1];
+      const blue = rgba[source + 2];
       const key = ((red >> 3) << 10) | ((green >> 3) << 5) | (blue >> 3);
 
       counts[key] += 1;
@@ -300,15 +343,29 @@ function colorFromBox(box) {
   ];
 }
 
-function mapPixelsToPalette(rgba, width, height, palette, useDither) {
+function mapPixelsToPalette(
+  rgba,
+  width,
+  height,
+  palette,
+  useDither,
+  transparentIndex,
+) {
   return useDither
-    ? mapPixelsToPaletteWithDither(rgba, width, height, palette)
-    : mapPixelsToPaletteFlat(rgba, palette);
+    ? mapPixelsToPaletteWithDither(
+        rgba,
+        width,
+        height,
+        palette,
+        transparentIndex,
+      )
+    : mapPixelsToPaletteFlat(rgba, palette, transparentIndex);
 }
 
-function mapPixelsToPaletteFlat(rgba, palette) {
+function mapPixelsToPaletteFlat(rgba, palette, transparentIndex) {
   const indices = new Uint8Array(rgba.length / 4);
   const cache = new Int16Array(32768);
+  const firstOpaqueIndex = transparentIndex === null ? 0 : 1;
   cache.fill(-1);
 
   for (
@@ -317,18 +374,34 @@ function mapPixelsToPaletteFlat(rgba, palette) {
     source += 4, target += 1
   ) {
     const alpha = rgba[source + 3];
-    const red = alpha ? rgba[source] : 255;
-    const green = alpha ? rgba[source + 1] : 255;
-    const blue = alpha ? rgba[source + 2] : 255;
-    indices[target] = nearestPaletteIndex(palette, cache, red, green, blue);
+    if (transparentIndex !== null && alpha < TRANSPARENT_ALPHA_THRESHOLD) {
+      indices[target] = transparentIndex;
+      continue;
+    }
+
+    indices[target] = nearestPaletteIndex(
+      palette,
+      cache,
+      rgba[source],
+      rgba[source + 1],
+      rgba[source + 2],
+      firstOpaqueIndex,
+    );
   }
 
   return indices;
 }
 
-function mapPixelsToPaletteWithDither(rgba, width, height, palette) {
+function mapPixelsToPaletteWithDither(
+  rgba,
+  width,
+  height,
+  palette,
+  transparentIndex,
+) {
   const indices = new Uint8Array(width * height);
   const cache = new Int16Array(32768);
+  const firstOpaqueIndex = transparentIndex === null ? 0 : 1;
   let currentError = new Float32Array((width + 2) * 3);
   let nextError = new Float32Array((width + 2) * 3);
   cache.fill(-1);
@@ -341,21 +414,21 @@ function mapPixelsToPaletteWithDither(rgba, width, height, palette) {
       const source = pixel * 4;
       const errorIndex = (x + 1) * 3;
       const alpha = rgba[source + 3];
-      const red = clampByte(
-        (alpha ? rgba[source] : 255) + currentError[errorIndex],
-      );
-      const green = clampByte(
-        (alpha ? rgba[source + 1] : 255) + currentError[errorIndex + 1],
-      );
-      const blue = clampByte(
-        (alpha ? rgba[source + 2] : 255) + currentError[errorIndex + 2],
-      );
+      if (transparentIndex !== null && alpha < TRANSPARENT_ALPHA_THRESHOLD) {
+        indices[pixel] = transparentIndex;
+        continue;
+      }
+
+      const red = clampByte(rgba[source] + currentError[errorIndex]);
+      const green = clampByte(rgba[source + 1] + currentError[errorIndex + 1]);
+      const blue = clampByte(rgba[source + 2] + currentError[errorIndex + 2]);
       const paletteIndex = nearestPaletteIndex(
         palette,
         cache,
         red,
         green,
         blue,
+        firstOpaqueIndex,
       );
       const color = palette[paletteIndex];
 
@@ -392,7 +465,14 @@ function addError(buffer, index, red, green, blue, weight) {
   buffer[offset + 2] += blue * weight;
 }
 
-function nearestPaletteIndex(palette, cache, red, green, blue) {
+function nearestPaletteIndex(
+  palette,
+  cache,
+  red,
+  green,
+  blue,
+  firstPaletteIndex = 0,
+) {
   const r = clampByte(red);
   const g = clampByte(green);
   const b = clampByte(blue);
@@ -401,10 +481,10 @@ function nearestPaletteIndex(palette, cache, red, green, blue) {
 
   if (cached >= 0) return cached;
 
-  let nearest = 0;
+  let nearest = firstPaletteIndex;
   let nearestDistance = Infinity;
 
-  for (let index = 0; index < palette.length; index += 1) {
+  for (let index = firstPaletteIndex; index < palette.length; index += 1) {
     const color = palette[index];
     const dr = r - color[0];
     const dg = g - color[1];
@@ -425,7 +505,7 @@ function clampByte(value) {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-function encodeGif(width, height, frames, palette) {
+function encodeGif(width, height, frames, palette, transparentIndex) {
   const out = [];
 
   writeAscii(out, "GIF89a");
@@ -436,7 +516,7 @@ function encodeGif(width, height, frames, palette) {
   writeLoopExtension(out);
 
   for (const frame of frames) {
-    writeGraphicControlExtension(out, frame.delay);
+    writeGraphicControlExtension(out, frame.delay, transparentIndex);
     writeImageDescriptor(out, width, height);
     out.push(8);
     writeSubBlocks(out, lzwLiteralEncode(frame.pixels));
@@ -479,10 +559,12 @@ function writeLoopExtension(out) {
   );
 }
 
-function writeGraphicControlExtension(out, delay) {
-  out.push(0x21, 0xf9, 0x04, 0x04);
+function writeGraphicControlExtension(out, delay, transparentIndex) {
+  const hasTransparency = transparentIndex !== null;
+  const packedFields = hasTransparency ? 0x09 : 0x04;
+  out.push(0x21, 0xf9, 0x04, packedFields);
   writeShort(out, delay);
-  out.push(0x00, 0x00);
+  out.push(hasTransparency ? transparentIndex : 0x00, 0x00);
 }
 
 function writeImageDescriptor(out, width, height) {

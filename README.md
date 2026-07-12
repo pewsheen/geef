@@ -1,51 +1,138 @@
 # Geef
 
-A Manifest V3 Chrome extension prototype for keeping a personal GIF wall in the browser and pasting GIFs into editable web inputs.
+Geef is a Manifest V3 Chrome extension for keeping a personal GIF library in
+the browser side panel and pasting selected GIFs into compatible editable web
+inputs.
 
-## What it does
+Library storage, video conversion, thumbnail generation, search, and backup
+processing all happen locally in the browser. Geef has no account system,
+analytics, ads, developer-operated backend, or remotely hosted code.
 
-- Opens as a Chrome side panel from the extension toolbar button.
-- Stores GIF metadata and GIF blobs in extension-owned IndexedDB.
-- Requests persistent browser storage and uses the `unlimitedStorage` permission.
-- Imports existing `.gif` files.
-- Converts local MP4/WebM/QuickTime videos into animated GIFs in the browser.
-- Keeps a group bar at the top for browsing GIF groups.
-- Pins favorites above the main library.
-- Imports and exports whole GIF groups as ZIP archives with `metadata.json` plus the GIF files.
-- Orders GIFs by recently used by default, with recently added and name sort options.
-- Lets the user rename, regroup, favorite, paste, and remove GIFs.
-- Pastes GIFs into the active tab by dispatching a paste event with a real `image/gif` File.
+## Features
 
-## Load it in Chrome
+- Open the GIF library from Chrome's extension toolbar in a side panel.
+- Import `.gif` files by picker or drag and drop.
+- Convert local MP4 and WebM clips to animated GIFs in the browser.
+- Search the library and organize GIFs into groups and favorites.
+- Keep recently used GIFs easy to reach, with an option to hide the Recently
+  section.
+- Rename, regroup, favorite, preview, paste, and remove individual GIFs.
+- Adjust the minimum grid cell width.
+- Export a group or the complete library as a ZIP backup, then selectively
+  restore groups and favorites.
+- Inspect storage usage by group and remove individual groups or the complete
+  library.
+- Review Chrome's current storage capacity before removing local data when space
+  runs low.
+- Request page access for only the current website, and only after the user
+  selects **Grant access**.
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Click Load unpacked.
-4. Select this folder: `D:\Codes\geef`.
-5. Open any web app with an editable message/input area, focus the input, then open the extension side panel.
+## Privacy and site access
 
-## Storage decision
+GIFs, thumbnails, metadata, groups, and settings are kept in extension-owned
+IndexedDB on the user's device. Geef briefly uses the active tab URL to identify
+the exact website for a permission request. It does not read existing input
+text, messages, page content, credentials, or cookies.
 
-Use extension-owned IndexedDB for the GIF library. It is better than `chrome.storage.local` for blobs and large files, and it keeps GIFs private to the extension rather than tied to a page origin. The extension also asks Chrome for persistent storage so browser cleanup is less likely to evict the GIF wall.
+Geef uses Chrome's normal IndexedDB quota by default and asks the browser to
+protect imported library data from automatic eviction. If the current quota is
+not enough, **Settings > Data** lets the user review usage and remove local data.
+Available physical disk space always applies.
 
-For a future shared GIF library, keep local IndexedDB as a cache and sync metadata/blob URLs against a server or workspace API.
+When the user selects **Paste**, Geef dispatches the selected GIF file to an
+editable field on the approved website. That website handles the pasted file
+under its own terms and privacy policy. See the full [privacy policy](PRIVACY.md)
+for data retention, deletion, and permission details.
 
-## Page integration point
+## Requirements
 
-The generic page bridge is `src/content-script.js`. It finds the active editable input and dispatches a synthetic paste event containing an `image/gif` File. Many chat and messaging apps handle pasted files this way.
+- Chrome 116 or newer
+- Node.js 22
+- pnpm 11
 
-The current generic selectors live in:
+## Install from source
 
-- `EDITABLE_INPUT_SELECTORS`
+1. Install dependencies:
 
-If a target app exposes an official plugin/API or upload endpoint, add a small adapter for that app and keep the generic paste path as a manual fallback.
+   ```sh
+   pnpm install
+   ```
 
-## MP4 conversion note
+2. Build the extension:
 
-The converter is intentionally local and dependency-free. It samples video frames into a canvas, scales to a small GIF-friendly size, builds an adaptive 256-color palette from the actual clip, applies optional Floyd-Steinberg dithering, and writes GIF89a bytes. Quality is suitable for a prototype; production can still swap in ffmpeg.wasm or a stronger quantizer if file size and visual quality need more tuning.
+   ```sh
+   pnpm build
+   ```
 
-## Dev preview
+3. Open `chrome://extensions`, enable **Developer mode**, and select **Load
+   unpacked**.
+4. Select the generated `dist` directory.
+5. Open a normal HTTP or HTTPS page with an editable field and select Geef from
+   the extension toolbar.
+6. Select **Grant access** to approve that website, focus the destination field,
+   and select a GIF in Geef to paste it.
 
-Run a static server from this folder and open `src/sidepanel.html?preview=1` to inspect the side panel with seeded mock GIFs. This preview mode does not paste into the active page; Paste is simulated so UI changes can be judged quickly.
+Chrome internal pages such as `chrome://extensions` do not allow extension page
+injection.
 
-In preview mode, click `Inspect UI`, hover the interface, then click an element to copy a stable target such as `data-ui="gif-card-actions"`. Provide that target when asking for UI adjustments.
+## Development
+
+```sh
+pnpm dev           # start the Vite development server
+pnpm test          # run the test suite
+pnpm typecheck     # check TypeScript without emitting files
+pnpm format:check  # verify repository formatting
+pnpm build         # create the unpacked extension in dist/
+```
+
+For a UI-only preview, run `pnpm dev` and open
+`src/sidepanel.html?preview=1`. Preview mode seeds a mock library and simulates
+paste actions; it does not request access to a page.
+
+In preview mode, select **Inspect UI**, hover the interface, and select an
+element to copy a stable target such as `data-ui="gif-card-actions"`.
+
+## Package a release
+
+Run:
+
+```sh
+pnpm pack:extension
+```
+
+This performs a clean build and creates:
+
+- `release/geef-<version>.zip`, with `manifest.json` at the archive root
+- `release/geef-<version>.zip.sha256`
+
+The packager verifies that `manifest.json` and `package.json` have matching
+versions and that every manifest-referenced file exists. `pnpm pack` runs the
+same extension packaging through pnpm's package lifecycle and is what the
+GitHub Actions packaging workflow uses.
+
+## Architecture
+
+- `src/background.ts` captures the toolbar launch context and opens the side
+  panel.
+- `src/sidepanel.ts` implements the library UI, media import/conversion, backup,
+  storage controls, site permission flow, and paste command.
+- `src/content-script.ts` locates an editable field on an approved site and
+  dispatches a paste event containing the selected `image/gif` file.
+- `src/store.ts` owns the IndexedDB library and settings data.
+- `src/gif-encoder.ts` performs local video frame sampling, palette generation,
+  dithering, transparency handling, and GIF89a encoding.
+
+The extension requests host access as an optional permission. Although the
+manifest allows HTTP and HTTPS origins so Geef can work on user-selected sites,
+the UI requests one exact origin at a time. No site content script is registered
+until the user grants that origin.
+
+## Chrome Web Store
+
+Store listing copy, the single-purpose statement, permission justifications,
+privacy-practice answers, reviewer test instructions, and the release checklist
+are maintained in [docs/chrome-web-store.md](docs/chrome-web-store.md).
+
+## License
+
+[MIT](LICENSE)

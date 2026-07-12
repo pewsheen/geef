@@ -19,7 +19,7 @@
           id="fileInput"
           data-ui="media-file-input"
           type="file"
-          accept="image/gif,video/mp4,.gif,.mp4"
+          accept="image/gif,video/mp4,video/webm,.gif,.mp4,.webm"
           multiple
           hidden
         />
@@ -28,71 +28,99 @@
           class="icon-button add-file-button"
           data-ui="add-file-button"
           type="button"
-          title="Add GIF or MP4"
+          title="Add GIF, MP4, or WebM"
         >
           +
         </button>
       </div>
     </header>
 
-    <main class="app-shell" data-ui="app-shell">
-      <div id="progress" class="progress" data-ui="conversion-progress" hidden>
-        <div class="progress-track" data-ui="conversion-progress-track">
-          <span data-ui="conversion-progress-fill"></span>
-        </div>
-        <strong data-ui="conversion-progress-label">Converting</strong>
-      </div>
-
-      <div class="group-row" data-ui="group-row">
-        <div class="group-bar-wrap" data-ui="group-bar-wrap">
-          <nav
-            id="groupBar"
-            class="group-bar"
-            data-ui="group-bar"
-            aria-label="GIF groups"
-          ></nav>
+    <div class="app-content" data-ui="app-content">
+      <aside
+        id="siteAccessWarning"
+        class="site-access-warning"
+        data-ui="site-access-warning"
+        aria-live="polite"
+        hidden
+      >
+        <div data-ui="site-access-warning-copy">
+          <strong>Site access required</strong>
+          <span id="siteAccessMessage"></span>
         </div>
         <button
-          id="groupEditButton"
-          class="icon-button group-edit-button"
-          data-ui="settings-button"
+          id="grantSiteAccessButton"
+          class="primary-button"
+          data-ui="grant-site-access-button"
           type="button"
-          title="Settings"
-          aria-label="Settings"
-        ></button>
-      </div>
+        >
+          Grant access
+        </button>
+      </aside>
 
-      <section
-        class="filters"
-        data-ui="library-filters"
-        aria-label="Library filters"
-      >
-        <input
-          id="searchInput"
-          data-ui="search-input"
-          type="search"
-          placeholder="Search GIFs"
-        />
-      </section>
-
-      <section
-        class="section-list"
-        data-ui="section-list"
-        aria-label="GIF library"
-      >
+      <main class="app-shell" data-ui="app-shell">
         <div
-          id="sectionList"
-          class="section-list-inner"
-          data-ui="section-list-inner"
-        ></div>
-        <div id="emptyState" class="empty-state" data-ui="empty-state" hidden>
-          <strong data-ui="empty-state-title">No GIFs yet</strong>
-          <span data-ui="empty-state-copy"
-            >Drop a GIF or MP4 here to start the wall.</span
-          >
+          id="progress"
+          class="progress"
+          data-ui="conversion-progress"
+          hidden
+        >
+          <div class="progress-track" data-ui="conversion-progress-track">
+            <span data-ui="conversion-progress-fill"></span>
+          </div>
+          <strong data-ui="conversion-progress-label">Converting</strong>
         </div>
-      </section>
-    </main>
+
+        <div class="group-row" data-ui="group-row">
+          <div class="group-bar-wrap" data-ui="group-bar-wrap">
+            <nav
+              id="groupBar"
+              class="group-bar"
+              data-ui="group-bar"
+              aria-label="GIF groups"
+            ></nav>
+          </div>
+          <button
+            id="groupEditButton"
+            class="icon-button group-edit-button"
+            data-ui="settings-button"
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+          ></button>
+        </div>
+
+        <section
+          class="filters"
+          data-ui="library-filters"
+          aria-label="Library filters"
+        >
+          <input
+            id="searchInput"
+            data-ui="search-input"
+            type="search"
+            placeholder="Search GIFs"
+          />
+        </section>
+
+        <section
+          class="section-list"
+          data-ui="section-list"
+          aria-label="GIF library"
+        >
+          <div
+            id="sectionList"
+            class="section-list-inner"
+            data-ui="section-list-inner"
+          ></div>
+          <div id="emptyState" class="empty-state" data-ui="empty-state" hidden>
+            <strong data-ui="empty-state-title">No GIFs yet</strong>
+            <span data-ui="empty-state-copy"
+              >Drop a GIF, MP4, or WebM here to start the wall.</span
+            >
+          </div>
+        </section>
+      </main>
+    </div>
 
     <footer class="status-bar" data-ui="status-bar">
       <span id="statusText" data-ui="status-text">Ready</span>
@@ -311,6 +339,17 @@
               ><strong id="dataLibraryUsage">0 B</strong>
             </div>
           </div>
+
+          <div class="data-capacity" data-ui="data-capacity">
+            <div>
+              <span>Browser capacity</span>
+              <strong id="dataCapacityUsage">Checking…</strong>
+            </div>
+            <p id="dataCapacityMessage">
+              Chrome manages the available storage for this library.
+            </p>
+          </div>
+
           <button
             id="dataRemoveAllButton"
             class="danger-button"
@@ -441,7 +480,6 @@
       </form>
     </dialog>
 
-    <script src="vendor/jszip.min.js"></script>
-    <script type="module" src="sidepanel.js"></script>
+    <script type="module" src="sidepanel.ts"></script>
   </body>
 </html>

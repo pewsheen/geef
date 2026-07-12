@@ -1,25 +1,30 @@
 {
   "name": "geef",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A local GIF library for the Chrome side panel.",
   "type": "module",
   "files": [
-    "LICENSE",
-    "manifest.json",
-    "src",
-    "store-assets/icons"
+    "dist"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "build": "vite build",
+    "dev": "vite",
+    "test": "tsx --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pack:extension": "node scripts/pack-extension.mjs",
+    "pack:extension": "pnpm build && node scripts/pack-extension.mjs",
+    "prepack": "pnpm build",
     "postpack": "node scripts/pack-extension.mjs --remove-pnpm-tarball"
   },
   "devDependencies": {
+    "@types/chrome": "^0.2.2",
     "archiver": "^8.0.0",
-    "prettier": "^3.9.5"
+    "prettier": "^3.9.5",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4"
   },
   "packageManager": "pnpm@11.11.0",
   "dependencies": {
