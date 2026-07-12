@@ -96,7 +96,6 @@ const el = {
   previewPaste: document.querySelector("#previewPaste"),
   previewRemove: document.querySelector("#previewRemove"),
   previewSave: document.querySelector("#previewSave"),
-  previewSend: document.querySelector("#previewSend"),
   previewTitle: document.querySelector("#previewTitle"),
   progress: document.querySelector("#progress"),
   progressBar: document.querySelector("#progress .progress-track span"),
@@ -193,12 +192,7 @@ function wireEvents() {
     render();
   });
 
-  el.previewPaste.addEventListener("click", () =>
-    pasteGif(state.previewId, false),
-  );
-  el.previewSend.addEventListener("click", () =>
-    pasteGif(state.previewId, true),
-  );
+  el.previewPaste.addEventListener("click", () => pasteGif(state.previewId));
   el.previewSave.addEventListener("click", savePreviewEdits);
   el.previewRemove.addEventListener("click", () => removeGif(state.previewId));
   el.previewDialog.addEventListener("click", closePreviewFromBackdrop);
@@ -390,9 +384,9 @@ function createGifCard(gif) {
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "gif-tile-button";
-  tile.dataset.ui = "gif-card-send-button";
-  tile.setAttribute("aria-label", `Send ${gif.title}`);
-  tile.addEventListener("click", () => pasteGif(gif.id, true));
+  tile.dataset.ui = "gif-card-paste-button";
+  tile.setAttribute("aria-label", `Paste ${gif.title}`);
+  tile.addEventListener("click", () => pasteGif(gif.id));
 
   const img = document.createElement("img");
   img.dataset.ui = "gif-card-image";
@@ -686,7 +680,7 @@ async function removeGif(id) {
   await refresh();
 }
 
-async function pasteGif(id, submit) {
+async function pasteGif(id) {
   if (!id) return;
   const gif = state.gifs.find((item) => item.id === id);
   const blob = await loadGifBlob(id);
@@ -697,27 +691,22 @@ async function pasteGif(id, submit) {
       useCount: (gif.useCount || 0) + 1,
       lastUsedAt: Date.now(),
     });
-    setStatus(submit ? "Preview send simulated." : "Preview paste simulated.");
+    setStatus("Preview paste simulated.");
     return;
   }
 
   setBusy(true);
   try {
     const dataUrl = await blobToDataUrl(blob);
-    const result = await sendToActiveTab({
+    const result = await pasteToActiveTab({
       type: "GEEF_INSERT_GIF",
       filename: gif.filename || `${gif.title}.gif`,
       dataUrl,
-      submit,
     });
 
     await touchGif(id);
     setStatus(
-      result?.ok
-        ? submit
-          ? "Sent GIF."
-          : "Pasted GIF."
-        : result?.reason || "Could not paste GIF.",
+      result?.ok ? "Pasted GIF." : result?.reason || "Could not paste GIF.",
     );
     await refresh();
   } catch (error) {
@@ -1889,7 +1878,7 @@ function escapeXml(value) {
   );
 }
 
-async function sendToActiveTab(payload) {
+async function pasteToActiveTab(payload) {
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,

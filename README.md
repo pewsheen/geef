@@ -13,8 +13,8 @@ A Manifest V3 Chrome extension prototype for keeping a personal GIF wall in the 
 - Pins favorites above the main library.
 - Imports and exports whole GIF groups as ZIP archives with `metadata.json` plus the GIF files.
 - Orders GIFs by recently used by default, with recently added and name sort options.
-- Lets the user rename, regroup, favorite, paste/send, and remove GIFs.
-- Sends GIFs to the active tab by dispatching a paste event with a real `image/gif` File.
+- Lets the user rename, regroup, favorite, paste, and remove GIFs.
+- Pastes GIFs into the active tab by dispatching a paste event with a real `image/gif` File.
 
 ## Load it in Chrome
 
@@ -37,7 +37,6 @@ The generic page bridge is `src/content-script.js`. It finds the active editable
 The current generic selectors live in:
 
 - `EDITABLE_INPUT_SELECTORS`
-- `SEND_BUTTON_SELECTORS`
 
 If a target app exposes an official plugin/API or upload endpoint, add a small adapter for that app and keep the generic paste path as a manual fallback.
 
@@ -47,6 +46,6 @@ The converter is intentionally local and dependency-free. It samples video frame
 
 ## Dev preview
 
-Run a static server from this folder and open `src/sidepanel.html?preview=1` to inspect the side panel with seeded mock GIFs. This preview mode does not paste into the active page; Paste and Send are simulated so UI changes can be judged quickly.
+Run a static server from this folder and open `src/sidepanel.html?preview=1` to inspect the side panel with seeded mock GIFs. This preview mode does not paste into the active page; Paste is simulated so UI changes can be judged quickly.
 
-In preview mode, click `Inspect UI`, hover the interface, then click an element to copy a stable target such as `data-ui="gif-card-actions"`. Send that target when asking for UI adjustments.
+In preview mode, click `Inspect UI`, hover the interface, then click an element to copy a stable target such as `data-ui="gif-card-actions"`. Provide that target when asking for UI adjustments.

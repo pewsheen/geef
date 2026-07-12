@@ -13,17 +13,6 @@
     'input[type="text"]',
   ];
 
-  const SEND_BUTTON_SELECTORS = [
-    '[data-testid*="send" i]',
-    '[aria-label*="send" i]',
-    'button[title*="send" i]',
-  ];
-  const COMPOSER_SELECTOR = [
-    "form",
-    '[data-testid*="composer" i]',
-    '[aria-label*="composer" i]',
-    '[class*="composer" i]',
-  ].join(",");
   const MAX_DATA_URL_LENGTH = 70 * 1024 ** 2;
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -66,15 +55,9 @@
       insertTextFallback(target, message.dataUrl);
     }
 
-    if (message.submit) {
-      await wait(80);
-      clickSendButton(target) || pressEnter(target);
-    }
-
     return {
       ok: true,
       pasted,
-      submitted: Boolean(message.submit),
     };
   }
 
@@ -146,42 +129,10 @@
     document.execCommand("insertText", false, text);
   }
 
-  function clickSendButton(target) {
-    const composer = target.closest?.(COMPOSER_SELECTOR);
-    if (!composer) return false;
-
-    for (const selector of SEND_BUTTON_SELECTORS) {
-      const button = composer.querySelector(selector);
-      if (button instanceof HTMLElement && !button.disabled) {
-        button.click();
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   function safeGifFilename(value) {
     const filename = String(value || "geef.gif")
       .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
       .slice(0, 120);
     return /\.gif$/i.test(filename) ? filename : `${filename}.gif`;
-  }
-
-  function pressEnter(target) {
-    const init = {
-      bubbles: true,
-      cancelable: true,
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13,
-    };
-    target.dispatchEvent(new KeyboardEvent("keydown", init));
-    target.dispatchEvent(new KeyboardEvent("keyup", init));
-  }
-
-  function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 })();

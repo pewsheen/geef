@@ -1517,7 +1517,7 @@ input:focus-visible {
   padding: 0 12px;
 }
 
-/* Paste = primary volt, Send = secondary volt */
+/* Paste = primary volt */
 .preview-dialog [data-ui="preview-paste-button"] {
   border-color: var(--volt-6);
   background: var(--volt-6);
@@ -1530,14 +1530,7 @@ input:focus-visible {
   color: var(--fg-inverse);
   filter: drop-shadow(0 0 7px rgba(223, 245, 0, 0.5));
 }
-.preview-dialog [data-ui="preview-send-button"] {
-  border-color: var(--volt-6);
-  color: var(--volt-6);
-  font-weight: 700;
-}
-
-.preview-dialog [data-ui="preview-paste-button"]::before,
-.preview-dialog [data-ui="preview-send-button"]::before {
+.preview-dialog [data-ui="preview-paste-button"]::before {
   content: "";
   display: block;
   flex: 0 0 auto;
@@ -1551,11 +1544,6 @@ input:focus-visible {
   height: 17px;
   mask: url("icons/paste.svg") center / contain no-repeat;
   -webkit-mask: url("icons/paste.svg") center / contain no-repeat;
-}
-
-.preview-dialog [data-ui="preview-send-button"]::before {
-  mask: url("icons/send.svg") center / contain no-repeat;
-  -webkit-mask: url("icons/send.svg") center / contain no-repeat;
 }
 
 /* ————— UI inspector (preview mode) ————— */
