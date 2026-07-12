@@ -1,7 +1,7 @@
 const MAX_GROUP_NAME_LENGTH = 32;
 
 export function pruneEmptyGroups(groups, gifs, options = {}) {
-  const fallbackGroup = cleanGroupName(options.fallbackGroup) || 'General';
+  const fallbackGroup = cleanGroupName(options.fallbackGroup) || "General";
   const reservedLabels = new Set(
     Array.from(options.reservedLabels || [], (group) =>
       cleanGroupName(group).toLowerCase(),
@@ -26,7 +26,7 @@ export function normalizeGroups(groups) {
 }
 
 export function cleanGroupName(value) {
-  return String(value || '')
+  return String(value || "")
     .trim()
     .slice(0, MAX_GROUP_NAME_LENGTH);
 }

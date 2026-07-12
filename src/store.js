@@ -2,12 +2,12 @@ import {
   cleanGroupName,
   normalizeGroups,
   pruneEmptyGroups,
-} from './group-utils.mjs';
+} from "./group-utils.mjs";
 
-const DB_NAME = 'geef';
+const DB_NAME = "geef";
 const DB_VERSION = 3;
-const DEFAULT_GROUP = 'General';
-const GROUPS_KEY = 'groups';
+const DEFAULT_GROUP = "General";
+const GROUPS_KEY = "groups";
 
 let dbPromise;
 
@@ -20,7 +20,7 @@ export function makeId() {
 export async function listGifs() {
   const db = await openDb();
   const records = await request(
-    db.transaction('gifs', 'readonly').objectStore('gifs').getAll(),
+    db.transaction("gifs", "readonly").objectStore("gifs").getAll(),
   );
   return records.sort(sortByFavoriteThenRecent);
 }
@@ -28,18 +28,18 @@ export async function listGifs() {
 export async function listGroups() {
   const db = await openDb();
   const settings = db
-    .transaction('settings', 'readonly')
-    .objectStore('settings');
+    .transaction("settings", "readonly")
+    .objectStore("settings");
   return readGroups(settings);
 }
 
 export async function getLibraryUsage() {
   const db = await openDb();
-  const tx = db.transaction(['gifs', 'blobs', 'thumbnails'], 'readonly');
+  const tx = db.transaction(["gifs", "blobs", "thumbnails"], "readonly");
   const [gifs, blobs, thumbnails] = await Promise.all([
-    request(tx.objectStore('gifs').getAll()),
-    request(tx.objectStore('blobs').getAll()),
-    request(tx.objectStore('thumbnails').getAll()),
+    request(tx.objectStore("gifs").getAll()),
+    request(tx.objectStore("blobs").getAll()),
+    request(tx.objectStore("thumbnails").getAll()),
   ]);
   const gifBytesById = new Map(
     blobs.map((item) => [item.id, item.blob?.size || 0]),
@@ -86,7 +86,7 @@ export async function getLibraryUsage() {
 
 export async function saveGroups(groups) {
   const db = await openDb();
-  return transaction(db, ['settings'], 'readwrite', (stores) =>
+  return transaction(db, ["settings"], "readwrite", (stores) =>
     writeGroups(stores.settings, groups),
   );
 }
@@ -94,14 +94,14 @@ export async function saveGroups(groups) {
 export async function getSetting(key) {
   const db = await openDb();
   const row = await request(
-    db.transaction('settings', 'readonly').objectStore('settings').get(key),
+    db.transaction("settings", "readonly").objectStore("settings").get(key),
   );
   return row?.value ?? null;
 }
 
 export async function saveSetting(key, value) {
   const db = await openDb();
-  return transaction(db, ['settings'], 'readwrite', (stores) => {
+  return transaction(db, ["settings"], "readwrite", (stores) => {
     stores.settings.put({ key, value });
     return value;
   });
@@ -113,7 +113,7 @@ export async function renameGroup(oldGroup, newGroup) {
   const to = cleanGroupName(newGroup);
   if (!from || !to || from === to) return listGroups();
 
-  return transaction(db, ['gifs', 'settings'], 'readwrite', async (stores) => {
+  return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
     const records = await request(stores.gifs.getAll());
     for (const gif of records) {
       if ((gif.group || DEFAULT_GROUP) === from) {
@@ -134,7 +134,7 @@ export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
   const fallback = cleanGroupName(fallbackGroup) || DEFAULT_GROUP;
   if (!target) return listGroups();
 
-  return transaction(db, ['gifs', 'settings'], 'readwrite', async (stores) => {
+  return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
     const records = await request(stores.gifs.getAll());
     let movedRecords = false;
 
@@ -156,7 +156,7 @@ export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
 export async function getGifBlob(id) {
   const db = await openDb();
   const row = await request(
-    db.transaction('blobs', 'readonly').objectStore('blobs').get(id),
+    db.transaction("blobs", "readonly").objectStore("blobs").get(id),
   );
   return row?.blob || null;
 }
@@ -164,14 +164,14 @@ export async function getGifBlob(id) {
 export async function getGifThumbnail(id) {
   const db = await openDb();
   const row = await request(
-    db.transaction('thumbnails', 'readonly').objectStore('thumbnails').get(id),
+    db.transaction("thumbnails", "readonly").objectStore("thumbnails").get(id),
   );
   return row?.blob || null;
 }
 
 export async function saveGifThumbnail(id, blob) {
   const db = await openDb();
-  await transaction(db, ['thumbnails'], 'readwrite', (stores) => {
+  await transaction(db, ["thumbnails"], "readwrite", (stores) => {
     stores.thumbnails.put({ id, blob });
   });
   return blob;
@@ -181,8 +181,8 @@ export async function saveGif(record, blob, thumbnailBlob = null) {
   const db = await openDb();
   await transaction(
     db,
-    ['gifs', 'blobs', 'thumbnails', 'settings'],
-    'readwrite',
+    ["gifs", "blobs", "thumbnails", "settings"],
+    "readwrite",
     async (stores) => {
       stores.gifs.put(record);
       stores.blobs.put({ id: record.id, blob });
@@ -198,9 +198,9 @@ export async function saveGif(record, blob, thumbnailBlob = null) {
 
 export async function updateGif(id, patch) {
   const db = await openDb();
-  return transaction(db, ['gifs', 'settings'], 'readwrite', async (stores) => {
+  return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
     const current = await request(stores.gifs.get(id));
-    if (!current) throw new Error('GIF not found');
+    if (!current) throw new Error("GIF not found");
     const next = { ...current, ...patch, updatedAt: Date.now() };
     stores.gifs.put(next);
 
@@ -220,7 +220,7 @@ export async function updateGif(id, patch) {
 
 export async function touchGif(id) {
   const db = await openDb();
-  return transaction(db, ['gifs'], 'readwrite', async (stores) => {
+  return transaction(db, ["gifs"], "readwrite", async (stores) => {
     const current = await request(stores.gifs.get(id));
     if (!current) return null;
     const now = Date.now();
@@ -239,8 +239,8 @@ export async function deleteGif(id) {
   const db = await openDb();
   await transaction(
     db,
-    ['gifs', 'blobs', 'thumbnails', 'settings'],
-    'readwrite',
+    ["gifs", "blobs", "thumbnails", "settings"],
+    "readwrite",
     async (stores) => {
       const records = await request(stores.gifs.getAll());
       const currentGroups = await readGroups(stores.settings);
@@ -283,8 +283,8 @@ export function blobToDataUrl(blob) {
 }
 
 export function bytesToHuman(bytes) {
-  if (!bytes) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
   const order = Math.min(
     Math.floor(Math.log(bytes) / Math.log(1024)),
     units.length - 1,
@@ -301,23 +301,23 @@ function openDb() {
     open.onupgradeneeded = () => {
       const db = open.result;
 
-      if (!db.objectStoreNames.contains('gifs')) {
-        const gifs = db.createObjectStore('gifs', { keyPath: 'id' });
-        gifs.createIndex('group', 'group', { unique: false });
-        gifs.createIndex('favorite', 'favorite', { unique: false });
-        gifs.createIndex('lastUsedAt', 'lastUsedAt', { unique: false });
+      if (!db.objectStoreNames.contains("gifs")) {
+        const gifs = db.createObjectStore("gifs", { keyPath: "id" });
+        gifs.createIndex("group", "group", { unique: false });
+        gifs.createIndex("favorite", "favorite", { unique: false });
+        gifs.createIndex("lastUsedAt", "lastUsedAt", { unique: false });
       }
 
-      if (!db.objectStoreNames.contains('blobs')) {
-        db.createObjectStore('blobs', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains("blobs")) {
+        db.createObjectStore("blobs", { keyPath: "id" });
       }
 
-      if (!db.objectStoreNames.contains('thumbnails')) {
-        db.createObjectStore('thumbnails', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains("thumbnails")) {
+        db.createObjectStore("thumbnails", { keyPath: "id" });
       }
 
-      if (!db.objectStoreNames.contains('settings')) {
-        db.createObjectStore('settings', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
       }
     };
 
@@ -359,7 +359,7 @@ function transaction(db, storeNames, mode, callback) {
     tx.onerror = () => reject(callbackError || tx.error);
     tx.onabort = () =>
       reject(
-        callbackError || tx.error || new Error('IndexedDB transaction aborted'),
+        callbackError || tx.error || new Error("IndexedDB transaction aborted"),
       );
 
     Promise.resolve()

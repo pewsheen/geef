@@ -14,18 +14,18 @@ export async function convertVideoToGif(
 ) {
   const settings = { ...DEFAULT_OPTIONS, ...options };
   const url = URL.createObjectURL(file);
-  const video = document.createElement('video');
+  const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
-  video.preload = 'auto';
+  video.preload = "auto";
   video.src = url;
 
   try {
-    await waitFor(video, 'loadedmetadata');
-    await waitFor(video, 'loadeddata').catch(() => {});
+    await waitFor(video, "loadedmetadata");
+    await waitFor(video, "loadeddata").catch(() => {});
 
     if (!Number.isFinite(video.duration) || video.duration <= 0) {
-      throw new Error('Video duration could not be read.');
+      throw new Error("Video duration could not be read.");
     }
 
     const size = fitSize(
@@ -34,11 +34,11 @@ export async function convertVideoToGif(
       settings.maxWidth,
       settings.maxHeight,
     );
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = size.width;
     canvas.height = size.height;
 
-    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const context = canvas.getContext("2d", { willReadFrequently: true });
     const frameCount = Math.max(
       1,
       Math.ceil(Math.min(video.duration, settings.maxSeconds) * settings.fps),
@@ -79,7 +79,7 @@ export async function convertVideoToGif(
     });
 
     const bytes = encodeGif(size.width, size.height, indexedFrames, palette);
-    return new Blob([bytes], { type: 'image/gif' });
+    return new Blob([bytes], { type: "image/gif" });
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -103,7 +103,7 @@ function waitFor(target, eventName) {
     const cleanup = () => {
       clearTimeout(timeout);
       target.removeEventListener(eventName, handleEvent);
-      target.removeEventListener('error', handleError);
+      target.removeEventListener("error", handleError);
     };
 
     const handleEvent = () => {
@@ -113,11 +113,11 @@ function waitFor(target, eventName) {
 
     const handleError = () => {
       cleanup();
-      reject(new Error('Video could not be loaded.'));
+      reject(new Error("Video could not be loaded."));
     };
 
     target.addEventListener(eventName, handleEvent, { once: true });
-    target.addEventListener('error', handleError, { once: true });
+    target.addEventListener("error", handleError, { once: true });
   });
 }
 
@@ -130,13 +130,13 @@ function seekVideo(video, time) {
 
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error('Timed out seeking video frame.'));
+      reject(new Error("Timed out seeking video frame."));
     }, 8000);
 
     const cleanup = () => {
       clearTimeout(timeout);
-      video.removeEventListener('seeked', handleSeeked);
-      video.removeEventListener('error', handleError);
+      video.removeEventListener("seeked", handleSeeked);
+      video.removeEventListener("error", handleError);
     };
 
     const handleSeeked = () => {
@@ -146,11 +146,11 @@ function seekVideo(video, time) {
 
     const handleError = () => {
       cleanup();
-      reject(new Error('Video seek failed.'));
+      reject(new Error("Video seek failed."));
     };
 
-    video.addEventListener('seeked', handleSeeked, { once: true });
-    video.addEventListener('error', handleError, { once: true });
+    video.addEventListener("seeked", handleSeeked, { once: true });
+    video.addEventListener("error", handleError, { once: true });
     video.currentTime = time;
   });
 }
@@ -275,9 +275,9 @@ function splitColorBox(box) {
 }
 
 function largestChannel(box) {
-  if (box.rRange >= box.gRange && box.rRange >= box.bRange) return 'r';
-  if (box.gRange >= box.rRange && box.gRange >= box.bRange) return 'g';
-  return 'b';
+  if (box.rRange >= box.gRange && box.rRange >= box.bRange) return "r";
+  if (box.gRange >= box.rRange && box.gRange >= box.bRange) return "g";
+  return "b";
 }
 
 function colorFromBox(box) {
@@ -428,7 +428,7 @@ function clampByte(value) {
 function encodeGif(width, height, frames, palette) {
   const out = [];
 
-  writeAscii(out, 'GIF89a');
+  writeAscii(out, "GIF89a");
   writeShort(out, width);
   writeShort(out, height);
   out.push(0xf7, 0x00, 0x00);

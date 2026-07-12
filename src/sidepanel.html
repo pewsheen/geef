@@ -311,7 +311,14 @@
               ><strong id="dataLibraryUsage">0 B</strong>
             </div>
           </div>
-          <button id="dataRemoveAllButton" class="danger-button" data-ui="data-remove-all-button" type="button">Remove all GIFs</button>
+          <button
+            id="dataRemoveAllButton"
+            class="danger-button"
+            data-ui="data-remove-all-button"
+            type="button"
+          >
+            Remove all GIFs
+          </button>
 
           <div class="data-group-section" data-ui="data-group-section">
             <strong data-ui="data-group-title">By group</strong>
@@ -410,10 +417,35 @@
 
     <dialog id="importDialog" class="preview-dialog" data-ui="import-dialog">
       <form method="dialog" data-ui="import-form">
-        <header><strong>Import ZIP</strong><button value="cancel" class="icon-button close-button" type="submit" aria-label="Close"></button></header>
-        <label id="importFavoritesField" class="checkbox-row" hidden><input id="importFavorites" type="checkbox" checked><span>Import favorites</span></label>
-        <div id="importGroupList" class="group-list" data-ui="import-group-list"></div>
-        <menu><button value="cancel" type="submit">Cancel</button><button id="importConfirmButton" class="primary-button" type="button">Import</button></menu>
+        <header>
+          <strong>Import ZIP</strong
+          ><button
+            value="cancel"
+            class="icon-button close-button"
+            type="submit"
+            aria-label="Close"
+          ></button>
+        </header>
+        <label id="importFavoritesField" class="checkbox-row" hidden
+          ><input id="importFavorites" type="checkbox" checked /><span
+            >Import favorites</span
+          ></label
+        >
+        <div
+          id="importGroupList"
+          class="group-list"
+          data-ui="import-group-list"
+        ></div>
+        <menu>
+          <button value="cancel" type="submit">Cancel</button
+          ><button
+            id="importConfirmButton"
+            class="primary-button"
+            type="button"
+          >
+            Import
+          </button>
+        </menu>
       </form>
     </dialog>
 

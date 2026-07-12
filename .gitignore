@@ -1,1 +1,5 @@
 dev-server.*.log
+node_modules/
+dist/
+*.tgz
+*.zip

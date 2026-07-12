@@ -2,6 +2,12 @@ name: Package Chrome Web Store archive
 
 on:
   workflow_dispatch:
+    inputs:
+      create_draft_release:
+        description: Create a draft GitHub release with the packaged files
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -14,16 +20,27 @@ jobs:
   package:
     name: Test and package
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate manifest
-        run: node -e "JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8'))"
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
 
-      - name: Run tests
-        run: node --test test/*.test.mjs
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test extension
+        run: pnpm test
 
       - name: Build clean extension archive
         id: package
@@ -32,19 +49,12 @@ jobs:
           set -euo pipefail
 
           version="$(node -p "JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8')).version")"
-          archive="geef-${version}.zip"
+          archive="dist/geef-${version}.zip"
 
-          mkdir -p package/store-assets
-          cp manifest.json LICENSE package/
-          cp -R src package/src
-          cp -R store-assets/icons package/store-assets/icons
+          pnpm pack
 
-          (
-            cd package
-            zip -q -r "../${archive}" .
-          )
-
-          sha256sum "${archive}" > "${archive}.sha256"
+          test -f "${archive}"
+          test -f "${archive}.sha256"
 
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
@@ -70,3 +80,44 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  release:
+    name: Create draft release
+    if: ${{ inputs.create_draft_release }}
+    needs: package
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged files
+        uses: actions/download-artifact@v4
+        with:
+          name: geef-${{ needs.package.outputs.version }}
+          path: dist
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.package.outputs.version }}
+          ARCHIVE: dist/geef-${{ needs.package.outputs.version }}.zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_url="$(
+            gh release create "v${VERSION}" \
+              "${ARCHIVE}" \
+              "${ARCHIVE}.sha256" \
+              --draft \
+              --generate-notes \
+              --target "${GITHUB_SHA}" \
+              --title "Geef v${VERSION}"
+          )"
+
+          {
+            echo
+            echo "### Draft GitHub release"
+            echo
+            echo "Created [Geef v${VERSION}](${release_url}) with the archive and checksum attached."
+          } >> "${GITHUB_STEP_SUMMARY}"

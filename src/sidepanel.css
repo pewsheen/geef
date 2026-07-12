@@ -1,4 +1,4 @@
-@import 'fonts.css';
+@import "fonts.css";
 
 /* ============================================================
    Geef side panel — RAIMEI // Volt design language
@@ -86,9 +86,9 @@
   --surface-selected: rgba(223, 245, 0, 0.08);
 
   /* Typography */
-  --font-display: 'Rajdhani', 'Chakra Petch', system-ui, sans-serif;
-  --font-body: 'Chakra Petch', system-ui, sans-serif;
-  --font-mono: 'Share Tech Mono', ui-monospace, 'Consolas', monospace;
+  --font-display: "Rajdhani", "Chakra Petch", system-ui, sans-serif;
+  --font-body: "Chakra Petch", system-ui, sans-serif;
+  --font-mono: "Share Tech Mono", ui-monospace, "Consolas", monospace;
   --tracking-label: 0.14em;
   --tracking-display: 0.05em;
 
@@ -99,10 +99,11 @@
   --chamfer-lg: 16px;
 
   /* Neon glow rings */
-  --glow-volt: 0 0 0 1px rgba(223, 245, 0, 0.55), 0 0 14px rgba(223, 245, 0, 0.3),
+  --glow-volt:
+    0 0 0 1px rgba(223, 245, 0, 0.55), 0 0 14px rgba(223, 245, 0, 0.3),
     0 0 40px rgba(223, 245, 0, 0.1);
-  --glow-cyan: 0 0 0 1px rgba(41, 227, 255, 0.55),
-    0 0 14px rgba(41, 227, 255, 0.3);
+  --glow-cyan:
+    0 0 0 1px rgba(41, 227, 255, 0.55), 0 0 14px rgba(41, 227, 255, 0.3);
   --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.7);
 
@@ -311,7 +312,7 @@ input:focus-visible {
   display: block;
 }
 
-.brand [data-ui='app-title'] {
+.brand [data-ui="app-title"] {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 20px;
@@ -322,8 +323,8 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.brand [data-ui='app-title']::after {
-  content: '//';
+.brand [data-ui="app-title"]::after {
+  content: "//";
   color: var(--volt-6);
 }
 
@@ -352,12 +353,12 @@ input:focus-visible {
 }
 
 .close-button::before {
-  content: '';
+  content: "";
   width: 16px;
   height: 16px;
   background: currentColor;
-  mask: url('icons/close.svg') center / contain no-repeat;
-  -webkit-mask: url('icons/close.svg') center / contain no-repeat;
+  mask: url("icons/close.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/close.svg") center / contain no-repeat;
 }
 
 .header-actions {
@@ -456,7 +457,7 @@ input:focus-visible {
   bottom: 0;
   z-index: 2;
   width: 24px;
-  content: '';
+  content: "";
   pointer-events: none;
 }
 
@@ -515,7 +516,7 @@ input:focus-visible {
   color: var(--fg-1);
 }
 
-.group-bar button[aria-pressed='true'] {
+.group-bar button[aria-pressed="true"] {
   border-color: var(--volt-6);
   background: var(--accent-subtle);
   color: var(--volt-5);
@@ -541,7 +542,7 @@ input:focus-visible {
   background: rgba(255, 165, 20, 0.12);
 }
 
-.group-bar .favorites-filter-button[aria-pressed='true'] {
+.group-bar .favorites-filter-button[aria-pressed="true"] {
   border-color: var(--amber-5);
   background: rgba(255, 165, 20, 0.12);
   color: var(--amber-4);
@@ -567,12 +568,12 @@ input:focus-visible {
 }
 
 .group-edit-button::before {
-  content: '';
+  content: "";
   width: 17px;
   height: 17px;
   background: currentColor;
-  mask: url('icons/settings.svg') center / contain no-repeat;
-  -webkit-mask: url('icons/settings.svg') center / contain no-repeat;
+  mask: url("icons/settings.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/settings.svg") center / contain no-repeat;
 }
 
 .group-edit-button:hover:not(:disabled) {
@@ -647,7 +648,7 @@ input:focus-visible {
 }
 
 .section-title h2::before {
-  content: '//';
+  content: "//";
   color: var(--volt-6);
   opacity: 0.85;
 }
@@ -729,7 +730,7 @@ input:focus-visible {
 .gif-card.is-thumbnail-loading::after {
   position: absolute;
   inset: 0;
-  content: '';
+  content: "";
   background:
     linear-gradient(
       100deg,
@@ -817,12 +818,12 @@ input:focus-visible {
 }
 
 .gif-actions .edit-button::before {
-  content: '';
+  content: "";
   width: 16px;
   height: 16px;
   background: currentColor;
-  mask: url('icons/edit.svg') center / contain no-repeat;
-  -webkit-mask: url('icons/edit.svg') center / contain no-repeat;
+  mask: url("icons/edit.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/edit.svg") center / contain no-repeat;
 }
 
 @media (hover: none) {
@@ -868,7 +869,7 @@ input:focus-visible {
 }
 
 .empty-state::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -917,7 +918,7 @@ input:focus-visible {
 }
 
 .status-bar::before {
-  content: '';
+  content: "";
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
@@ -1023,14 +1024,14 @@ input:focus-visible {
 
 .settings-tabs-wrap::before {
   left: 1px;
-  content: '‹';
+  content: "‹";
   background: linear-gradient(90deg, var(--bg-inset) 20%, transparent);
   opacity: var(--left-tab-fade, 0);
 }
 
 .settings-tabs-wrap::after {
   right: 1px;
-  content: '›';
+  content: "›";
   background: linear-gradient(270deg, var(--bg-inset) 20%, transparent);
   opacity: var(--right-tab-fade, 0);
 }
@@ -1070,13 +1071,13 @@ input:focus-visible {
   user-select: none;
 }
 
-.settings-tabs button:not([aria-selected='true']):hover {
+.settings-tabs button:not([aria-selected="true"]):hover {
   border-color: var(--border-2);
   background: var(--surface-hover);
   color: var(--fg-1);
 }
 
-.settings-tabs button[aria-selected='true'] {
+.settings-tabs button[aria-selected="true"] {
   border-color: var(--volt-6);
   background: var(--accent-subtle);
   color: var(--volt-5);
@@ -1101,7 +1102,7 @@ input:focus-visible {
 }
 
 .setting-field > span:not(.setting-control)::before {
-  content: '// ';
+  content: "// ";
   color: var(--cyan-7);
 }
 
@@ -1132,7 +1133,7 @@ input:focus-visible {
 
 .setting-checkbox input,
 .checkbox-row input,
-.import-group-row input[type='checkbox'] {
+.import-group-row input[type="checkbox"] {
   width: auto;
   min-height: 0;
   margin: 0;
@@ -1260,7 +1261,7 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.import-group-row input[type='text'] {
+.import-group-row input[type="text"] {
   min-width: 0;
 }
 
@@ -1334,7 +1335,7 @@ input:focus-visible {
 
 .archive-export-section > strong::before,
 .data-group-section > strong::before {
-  content: '// ';
+  content: "// ";
   color: var(--cyan-7);
 }
 
@@ -1481,7 +1482,7 @@ input:focus-visible {
 }
 
 .preview-dialog label span::before {
-  content: '// ';
+  content: "// ";
   color: var(--cyan-7);
 }
 
@@ -1517,27 +1518,27 @@ input:focus-visible {
 }
 
 /* Paste = primary volt, Send = secondary volt */
-.preview-dialog [data-ui='preview-paste-button'] {
+.preview-dialog [data-ui="preview-paste-button"] {
   border-color: var(--volt-6);
   background: var(--volt-6);
   color: var(--fg-inverse);
   font-weight: 700;
 }
-.preview-dialog [data-ui='preview-paste-button']:hover:not(:disabled) {
+.preview-dialog [data-ui="preview-paste-button"]:hover:not(:disabled) {
   border-color: var(--volt-4);
   background: var(--volt-4);
   color: var(--fg-inverse);
   filter: drop-shadow(0 0 7px rgba(223, 245, 0, 0.5));
 }
-.preview-dialog [data-ui='preview-send-button'] {
+.preview-dialog [data-ui="preview-send-button"] {
   border-color: var(--volt-6);
   color: var(--volt-6);
   font-weight: 700;
 }
 
-.preview-dialog [data-ui='preview-paste-button']::before,
-.preview-dialog [data-ui='preview-send-button']::before {
-  content: '';
+.preview-dialog [data-ui="preview-paste-button"]::before,
+.preview-dialog [data-ui="preview-send-button"]::before {
+  content: "";
   display: block;
   flex: 0 0 auto;
   width: 16px;
@@ -1545,16 +1546,16 @@ input:focus-visible {
   background: currentColor;
 }
 
-.preview-dialog [data-ui='preview-paste-button']::before {
+.preview-dialog [data-ui="preview-paste-button"]::before {
   width: 17px;
   height: 17px;
-  mask: url('icons/paste.svg') center / contain no-repeat;
-  -webkit-mask: url('icons/paste.svg') center / contain no-repeat;
+  mask: url("icons/paste.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/paste.svg") center / contain no-repeat;
 }
 
-.preview-dialog [data-ui='preview-send-button']::before {
-  mask: url('icons/send.svg') center / contain no-repeat;
-  -webkit-mask: url('icons/send.svg') center / contain no-repeat;
+.preview-dialog [data-ui="preview-send-button"]::before {
+  mask: url("icons/send.svg") center / contain no-repeat;
+  -webkit-mask: url("icons/send.svg") center / contain no-repeat;
 }
 
 /* ————— UI inspector (preview mode) ————— */
@@ -1575,7 +1576,7 @@ body.ui-inspecting {
   color: var(--volt-6);
 }
 
-.ui-inspect-toggle[aria-pressed='true'] {
+.ui-inspect-toggle[aria-pressed="true"] {
   background: var(--volt-6);
   color: var(--fg-inverse);
 }

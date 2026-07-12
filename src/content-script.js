@@ -9,7 +9,7 @@
     '[aria-label*="chat" i][contenteditable="true"]',
     '[role="textbox"][contenteditable="true"]',
     'div[contenteditable="true"]',
-    'textarea',
+    "textarea",
     'input[type="text"]',
   ];
 
@@ -21,7 +21,7 @@
   ];
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== 'GEEF_INSERT_GIF') return false;
+    if (message?.type !== "GEEF_INSERT_GIF") return false;
 
     insertGif(message)
       .then((result) => sendResponse(result))
@@ -33,13 +33,13 @@
   async function insertGif(message) {
     const target = findEditableInput();
     if (!target)
-      return { ok: false, reason: 'No focused editable input was found.' };
+      return { ok: false, reason: "No focused editable input was found." };
 
     target.focus();
 
     const file = await dataUrlToFile(
       message.dataUrl,
-      message.filename || 'geef.gif',
+      message.filename || "geef.gif",
     );
     const pasted = pasteFile(target, file);
 
@@ -81,7 +81,7 @@
     const response = await fetch(dataUrl);
     const blob = await response.blob();
     return new File([blob], filename, {
-      type: 'image/gif',
+      type: "image/gif",
       lastModified: Date.now(),
     });
   }
@@ -91,14 +91,14 @@
       const transfer = new DataTransfer();
       transfer.items.add(file);
 
-      const event = new ClipboardEvent('paste', {
+      const event = new ClipboardEvent("paste", {
         bubbles: true,
         cancelable: true,
         clipboardData: transfer,
       });
 
       if (!event.clipboardData) {
-        Object.defineProperty(event, 'clipboardData', { value: transfer });
+        Object.defineProperty(event, "clipboardData", { value: transfer });
       }
 
       target.dispatchEvent(event);
@@ -115,16 +115,16 @@
       target.value = `${target.value.slice(0, start)}${text}${target.value.slice(end)}`;
       target.selectionStart = target.selectionEnd = start + text.length;
       target.dispatchEvent(
-        new InputEvent('input', {
+        new InputEvent("input", {
           bubbles: true,
-          inputType: 'insertText',
+          inputType: "insertText",
           data: text,
         }),
       );
       return;
     }
 
-    document.execCommand('insertText', false, text);
+    document.execCommand("insertText", false, text);
   }
 
   function clickSendButton() {
@@ -143,13 +143,13 @@
     const init = {
       bubbles: true,
       cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
+      key: "Enter",
+      code: "Enter",
       keyCode: 13,
       which: 13,
     };
-    target.dispatchEvent(new KeyboardEvent('keydown', init));
-    target.dispatchEvent(new KeyboardEvent('keyup', init));
+    target.dispatchEvent(new KeyboardEvent("keydown", init));
+    target.dispatchEvent(new KeyboardEvent("keyup", init));
   }
 
   function wait(ms) {
