@@ -1,6 +1,6 @@
 {
   "name": "geef",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "private": true,
   "description": "A local GIF library for the Chrome side panel.",
   "type": "module",
