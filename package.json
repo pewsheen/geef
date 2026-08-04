@@ -1,6 +1,6 @@
 {
   "name": "geef",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "A local mixed-media library for the Chrome side panel.",
   "type": "module",
