@@ -94,12 +94,59 @@
           data-ui="library-filters"
           aria-label="Library filters"
         >
-          <input
-            id="searchInput"
-            data-ui="search-input"
-            type="search"
-            placeholder="Search media"
-          />
+          <div class="search-row" data-ui="search-row">
+            <input
+              id="searchInput"
+              data-ui="search-input"
+              type="search"
+              placeholder="Search media"
+            />
+            <button
+              id="selectMediaButton"
+              data-ui="select-media-button"
+              type="button"
+              aria-pressed="false"
+            >
+              Select
+            </button>
+          </div>
+
+          <div
+            id="batchToolbar"
+            class="batch-toolbar"
+            data-ui="batch-toolbar"
+            aria-label="Selected media actions"
+            hidden
+          >
+            <strong
+              id="batchSelectionCount"
+              data-ui="batch-selection-count"
+              aria-live="polite"
+              >0 selected</strong
+            >
+            <div class="batch-actions" data-ui="batch-actions">
+              <select
+                id="batchGroupSelect"
+                data-ui="batch-group-select"
+                aria-label="Destination group"
+              ></select>
+              <button
+                id="batchMoveButton"
+                data-ui="batch-move-button"
+                type="button"
+              >
+                Move
+              </button>
+              <button
+                id="batchDeleteButton"
+                class="danger-button"
+                data-ui="batch-delete-button"
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </section>
 
         <section

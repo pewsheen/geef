@@ -3,6 +3,7 @@ import {
   blobToDataUrl,
   bytesToHuman,
   deleteMedia,
+  deleteMediaItems,
   estimateStorage,
   getSetting,
   getMediaBlob,
@@ -11,6 +12,7 @@ import {
   listMedia,
   listGroups,
   makeId,
+  moveMediaToGroup,
   removeGroup,
   renameGroup,
   requestPersistentStorage,
@@ -86,6 +88,8 @@ const state = {
   groups: [],
   settingsTab: "appearance",
   previewId: null,
+  selectionMode: false,
+  selectedIds: new Set(),
   objectUrls: new Map(),
   thumbnailJobs: new Map(),
   previewBlobs: new Map(),
@@ -122,6 +126,11 @@ const el = {
   gridCellPreviewLabel: document.querySelector("#gridCellPreviewLabel"),
   groupPanel: document.querySelector("#groupPanel"),
   backupPanel: document.querySelector("#backupPanel"),
+  batchDeleteButton: document.querySelector("#batchDeleteButton"),
+  batchGroupSelect: document.querySelector("#batchGroupSelect"),
+  batchMoveButton: document.querySelector("#batchMoveButton"),
+  batchSelectionCount: document.querySelector("#batchSelectionCount"),
+  batchToolbar: document.querySelector("#batchToolbar"),
   dataPanel: document.querySelector("#dataPanel"),
   dataCapacityMessage: document.querySelector("#dataCapacityMessage"),
   dataCapacityUsage: document.querySelector("#dataCapacityUsage"),
@@ -142,6 +151,7 @@ const el = {
   progress: document.querySelector("#progress"),
   progressBar: document.querySelector("#progress .progress-track span"),
   searchInput: document.querySelector("#searchInput"),
+  selectMediaButton: document.querySelector("#selectMediaButton"),
   libraryScroll: document.querySelector(".section-list"),
   sectionList: document.querySelector("#sectionList"),
   settingsTabList: document.querySelector(".settings-tabs"),
@@ -199,6 +209,9 @@ function wireEvents() {
   el.gridCellMinInput.addEventListener("input", updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener("click", saveGridCellMin);
   el.showRecentlyInput.addEventListener("change", saveShowRecently);
+  el.selectMediaButton.addEventListener("click", toggleSelectionMode);
+  el.batchMoveButton.addEventListener("click", moveSelectedMedia);
+  el.batchDeleteButton.addEventListener("click", deleteSelectedMedia);
   el.settingsTabButtons.forEach((tab) =>
     tab.addEventListener("click", (event) => {
       if (suppressSettingsTabClick) {
@@ -303,7 +316,9 @@ async function refresh() {
 }
 
 function render() {
+  reconcileSelectedMedia();
   renderGroupBar();
+  renderBatchToolbar();
 
   const sections = buildSections();
   const visibleCount = sections.reduce(
@@ -441,13 +456,27 @@ function createGifCard(gif) {
   card.dataset.ui = "gif-card";
   card.dataset.id = gif.id;
   card.dataset.gifId = gif.id;
+  const isSelected = state.selectedIds.has(gif.id);
+  card.classList.toggle("is-selectable", state.selectionMode);
+  card.classList.toggle("is-selected", isSelected);
 
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "gif-tile-button";
-  tile.dataset.ui = "gif-card-paste-button";
-  tile.setAttribute("aria-label", `Paste ${gif.title}`);
-  tile.addEventListener("click", () => pasteMedia(gif.id));
+  tile.dataset.ui = state.selectionMode
+    ? "gif-card-select-button"
+    : "gif-card-paste-button";
+  if (state.selectionMode) {
+    tile.setAttribute(
+      "aria-label",
+      `${isSelected ? "Deselect" : "Select"} ${gif.title}`,
+    );
+    tile.setAttribute("aria-pressed", String(isSelected));
+    tile.addEventListener("click", () => toggleMediaSelection(gif.id));
+  } else {
+    tile.setAttribute("aria-label", `Paste ${gif.title}`);
+    tile.addEventListener("click", () => pasteMedia(gif.id));
+  }
 
   const visual = isVideoRecord(gif)
     ? document.createElement("video")
@@ -462,7 +491,12 @@ function createGifCard(gif) {
   } else {
     visual.alt = gif.title;
   }
-  tile.append(visual);
+  const selectionIndicator = document.createElement("span");
+  selectionIndicator.className = "gif-selection-indicator";
+  selectionIndicator.dataset.ui = "gif-selection-indicator";
+  selectionIndicator.setAttribute("aria-hidden", "true");
+  selectionIndicator.textContent = "✓";
+  tile.append(visual, selectionIndicator);
 
   const actions = document.createElement("div");
   actions.className = "gif-actions";
@@ -480,6 +514,120 @@ function createGifCard(gif) {
 
   card.append(tile, actions);
   return card;
+}
+
+function toggleSelectionMode() {
+  state.selectionMode = !state.selectionMode;
+  if (!state.selectionMode) state.selectedIds.clear();
+  render();
+}
+
+function toggleMediaSelection(id) {
+  if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+  else state.selectedIds.add(id);
+  render();
+}
+
+function reconcileSelectedMedia() {
+  const mediaIds = new Set(state.gifs.map((gif) => gif.id));
+  for (const id of state.selectedIds) {
+    if (!mediaIds.has(id)) state.selectedIds.delete(id);
+  }
+  if (!state.gifs.length) state.selectionMode = false;
+}
+
+function renderBatchToolbar() {
+  const selectionCount = state.selectedIds.size;
+  el.selectMediaButton.disabled = !state.gifs.length;
+  el.selectMediaButton.textContent = state.selectionMode ? "Cancel" : "Select";
+  el.selectMediaButton.setAttribute(
+    "aria-pressed",
+    String(state.selectionMode),
+  );
+  el.batchToolbar.hidden = !state.selectionMode;
+  el.batchSelectionCount.textContent = `${selectionCount} selected`;
+  el.batchMoveButton.disabled = selectionCount === 0;
+  el.batchDeleteButton.disabled = selectionCount === 0;
+
+  const currentGroup = el.batchGroupSelect.value;
+  const groups = editableGroups();
+  el.batchGroupSelect.replaceChildren(
+    ...groups.map((group) => {
+      const option = document.createElement("option");
+      option.value = group;
+      option.textContent = group;
+      return option;
+    }),
+  );
+  const preferredGroup = groups.includes(currentGroup)
+    ? currentGroup
+    : groups.includes(state.activeGroup)
+      ? state.activeGroup
+      : groups[0] || FALLBACK_GROUP;
+  el.batchGroupSelect.value = preferredGroup;
+  el.batchGroupSelect.disabled = selectionCount === 0;
+}
+
+async function moveSelectedMedia() {
+  const ids = [...state.selectedIds];
+  const group = contentGroupName(el.batchGroupSelect.value);
+  if (!ids.length || !validateEditableGroup(group)) return;
+  let movedCount = 0;
+
+  if (PREVIEW_MODE) {
+    const selectedIds = new Set(ids);
+    const now = Date.now();
+    state.gifs = state.gifs.map((gif) => {
+      if (!selectedIds.has(gif.id) || gifGroup(gif) === group) return gif;
+      movedCount += 1;
+      return { ...gif, group, updatedAt: now };
+    });
+    state.groups = normalizeGroupList([...state.groups, group]);
+    finishSelectionMode();
+    prunePreviewGroups();
+  } else {
+    movedCount = await moveMediaToGroup(ids, group);
+    finishSelectionMode();
+  }
+
+  await refresh();
+  setStatus(
+    movedCount
+      ? `Moved ${itemCountText(movedCount)} to "${group}".`
+      : `Selected media are already in "${group}".`,
+  );
+}
+
+async function deleteSelectedMedia() {
+  const ids = [...state.selectedIds];
+  if (!ids.length) return;
+  const ok = confirm(`Delete ${itemCountText(ids.length)}?`);
+  if (!ok) return;
+
+  let deletedCount;
+  if (PREVIEW_MODE) {
+    const selectedIds = new Set(ids);
+    deletedCount = state.gifs.filter((gif) => selectedIds.has(gif.id)).length;
+    state.gifs = state.gifs.filter((gif) => !selectedIds.has(gif.id));
+    for (const id of ids) {
+      revokeObjectUrl(id);
+      state.previewBlobs.delete(id);
+    }
+    finishSelectionMode();
+    prunePreviewGroups();
+  } else {
+    deletedCount = await deleteMediaItems(ids);
+    ids.forEach(revokeObjectUrl);
+    finishSelectionMode();
+  }
+
+  await refresh();
+  setStatus(`Deleted ${itemCountText(deletedCount)}.`);
+}
+
+function finishSelectionMode() {
+  state.selectedIds.clear();
+  state.selectionMode = false;
 }
 
 async function hydrateImages(container, gifs) {
@@ -2072,6 +2220,7 @@ async function loadOrCreateGifThumbnail(id) {
 
 async function playGridMedia(id, visual, record) {
   if (libraryIsScrolling) return;
+  if (state.selectionMode) return;
   const mimeType = recordMimeType(record);
   if (mimeType !== "image/gif" && !mimeType.startsWith("video/")) return;
 

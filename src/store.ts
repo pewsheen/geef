@@ -229,6 +229,36 @@ export async function updateMedia(id, patch) {
   });
 }
 
+export async function moveMediaToGroup(ids, group) {
+  const db = await openDb();
+  const selectedIds = new Set(ids);
+  if (!selectedIds.size) return 0;
+
+  return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
+    const records = await request(stores.gifs.getAll());
+    const currentGroups = await readGroups(stores.settings);
+    const now = Date.now();
+    let movedCount = 0;
+    const nextRecords = records.map((record) => {
+      if (
+        !selectedIds.has(record.id) ||
+        (record.group || DEFAULT_GROUP) === group
+      )
+        return record;
+      const next = { ...record, group, updatedAt: now };
+      stores.gifs.put(next);
+      movedCount += 1;
+      return next;
+    });
+
+    writeGroups(
+      stores.settings,
+      pruneEmptyGroups([...currentGroups, group], nextRecords),
+    );
+    return movedCount;
+  });
+}
+
 export async function touchMedia(id) {
   const db = await openDb();
   return transaction(db, ["gifs"], "readwrite", async (stores) => {
@@ -266,6 +296,41 @@ export async function deleteMedia(id) {
           records.filter((gif) => gif.id !== id),
         ),
       );
+    },
+  );
+}
+
+export async function deleteMediaItems(ids) {
+  const db = await openDb();
+  const selectedIds = new Set(ids);
+  if (!selectedIds.size) return 0;
+
+  return transaction(
+    db,
+    ["gifs", "blobs", "thumbnails", "settings"],
+    "readwrite",
+    async (stores) => {
+      const records = await request(stores.gifs.getAll());
+      const currentGroups = await readGroups(stores.settings);
+      const existingIds = new Set(records.map((record) => record.id));
+      let deletedCount = 0;
+
+      for (const id of selectedIds) {
+        if (!existingIds.has(id)) continue;
+        stores.gifs.delete(id);
+        stores.blobs.delete(id);
+        stores.thumbnails.delete(id);
+        deletedCount += 1;
+      }
+
+      writeGroups(
+        stores.settings,
+        pruneEmptyGroups(
+          currentGroups,
+          records.filter((record) => !selectedIds.has(record.id)),
+        ),
+      );
+      return deletedCount;
     },
   );
 }

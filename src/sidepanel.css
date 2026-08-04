@@ -638,10 +638,74 @@ input:focus-visible {
 /* ————— Search / filters ————— */
 .filters {
   display: grid;
+  gap: 8px;
 }
 
 .filters #searchInput {
   --cut: 8px;
+}
+
+.search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.search-row #selectMediaButton {
+  min-width: 76px;
+  padding: 0 12px;
+}
+
+.search-row #selectMediaButton[aria-pressed="true"] {
+  border-color: var(--cyan-5);
+  background: color-mix(in srgb, var(--cyan-10) 72%, transparent);
+  color: var(--cyan-4);
+}
+
+.batch-toolbar {
+  --cut: var(--chamfer-sm);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--cut)) 0,
+    100% var(--cut),
+    100% 100%,
+    0 100%
+  );
+  display: grid;
+  gap: 7px;
+  padding: 8px 8px 8px 11px;
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--cyan-5);
+  background: color-mix(in srgb, var(--cyan-10) 34%, var(--bg-raised));
+}
+
+.batch-toolbar > strong {
+  color: var(--cyan-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.batch-toolbar > strong::before {
+  content: "// ";
+  opacity: 0.72;
+}
+
+.batch-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+}
+
+.batch-actions select,
+.batch-actions button {
+  min-height: 32px;
+}
+
+.batch-actions button {
+  padding: 0 10px;
 }
 
 /* ————— Library sections ————— */
@@ -750,6 +814,28 @@ input:focus-visible {
   filter: drop-shadow(0 0 6px rgba(223, 245, 0, 0.45));
 }
 
+.gif-card.is-selectable {
+  cursor: pointer;
+}
+
+.gif-card.is-selectable .gif-actions {
+  display: none;
+}
+
+.gif-card.is-selected {
+  border-color: var(--cyan-5);
+  filter: drop-shadow(0 0 7px rgba(41, 227, 255, 0.48));
+}
+
+.gif-card.is-selected .gif-tile-button::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border: 2px solid color-mix(in srgb, var(--cyan-5) 72%, transparent);
+  background: color-mix(in srgb, var(--cyan-10) 16%, transparent);
+  pointer-events: none;
+}
+
 .gif-tile-button {
   --cut: 0px;
   display: block;
@@ -762,6 +848,36 @@ input:focus-visible {
   clip-path: none;
   background: transparent;
   color: inherit;
+}
+
+.gif-selection-indicator {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 3;
+  display: none;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 1px solid var(--border-bright);
+  background: color-mix(in srgb, var(--carbon-10) 88%, transparent);
+  color: transparent;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.gif-card.is-selectable .gif-selection-indicator {
+  display: grid;
+}
+
+.gif-card.is-selected .gif-selection-indicator {
+  border-color: var(--cyan-4);
+  background: var(--cyan-5);
+  color: var(--carbon-10);
+  box-shadow: 0 0 10px rgba(41, 227, 255, 0.5);
 }
 
 .gif-tile-button:hover {

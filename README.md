@@ -21,6 +21,8 @@ analytics, ads, developer-operated backend, or remotely hosted code.
 - Keep recently used media easy to reach, with an option to hide the Recently
   section.
 - Rename, regroup, favorite, preview, paste, and remove individual items.
+- Select multiple media items to move them to another group or delete them in
+  one batch.
 - Adjust the minimum grid cell width.
 - Export a group or the complete library as a ZIP backup, then selectively
   restore groups and favorites.
