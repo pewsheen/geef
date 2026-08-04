@@ -2,8 +2,8 @@
 
 Effective date: July 13, 2026
 
-Geef is a Chrome extension that keeps a personal GIF library in the browser and
-lets the user paste a selected GIF into an editable field on a website they
+Geef is a Chrome extension that keeps a personal media library in the browser and
+lets the user paste a selected item into an editable field on a website they
 approve. This policy describes the data handled by the official Geef extension.
 
 ## Summary
@@ -12,18 +12,18 @@ approve. This policy describes the data handled by the official Geef extension.
 - Geef does not require an account.
 - Geef does not include analytics, advertising, or tracking.
 - Geef does not sell user data or share it with data brokers or advertisers.
-- GIF library data and media conversion stay on the user's device.
-- A GIF leaves the extension only when the user explicitly pastes it into a
+- Library data and media conversion stay on the user's device.
+- A media item leaves the extension only when the user explicitly pastes it into a
   website or exports it as a local backup.
 
 ## Data Geef handles
 
 ### User-provided media and library data
 
-When the user imports a GIF, MP4, WebM, or Geef ZIP backup, the extension handles
+When the user imports a picture, GIF, MP4, WebM, or Geef ZIP backup, the extension handles
 that file on the user's device. It may store:
 
-- the imported or converted GIF and a generated thumbnail;
+- the imported media or converted GIF and a generated thumbnail;
 - the filename, title, dimensions, and file size;
 - the selected group and favorite status; and
 - creation, update, last-used, and use-count metadata.
@@ -47,7 +47,7 @@ history.
 ### Interaction with approved pages
 
 On a website the user has approved, Geef identifies the focused or available
-editable field and dispatches the user-selected GIF to that field when the user
+editable field and dispatches the user-selected media to that field when the user
 selects **Paste**. Geef does not read, record, or store existing field text,
 messages, page content, browsing history, keystrokes, credentials, cookies, or
 authentication data.
@@ -56,17 +56,17 @@ authentication data.
 
 Geef uses the data above only to provide its user-facing features:
 
-- display, search, organize, preview, and manage the local GIF library;
+- display, search, organize, preview, and manage the local media library;
 - convert user-selected videos to GIFs;
 - create and restore user-requested local backups;
-- remember local settings and recently used GIFs; and
-- paste a selected GIF into a user-approved website.
+- remember local settings and recently used media; and
+- paste selected media into a user-approved website.
 
 ## Storage, retention, and deletion
 
-GIFs, thumbnails, metadata, and settings are stored in extension-owned browser
+Media, thumbnails, metadata, and settings are stored in extension-owned browser
 storage on the user's device. They remain there until the user removes an item,
-deletes a group's GIFs from **Settings > Data**, selects **Remove all GIFs**,
+deletes a group's media from **Settings > Data**, selects **Remove all media**,
 clears the extension's site data, or uninstalls the extension.
 
 Geef uses Chrome's normal IndexedDB storage quota by default and asks Chrome to
@@ -89,9 +89,9 @@ Geef does not transmit library data, website addresses, or usage data to the
 developer or to a developer-operated service. It does not use analytics or
 advertising services.
 
-When the user explicitly selects **Paste**, the selected GIF is provided to the
+When the user explicitly selects **Paste**, the selected media is provided to the
 approved website through that page's editable field. The destination website may
-then upload or otherwise process the GIF according to its own terms and privacy
+then upload or otherwise process the media according to its own terms and privacy
 policy. When the user exports a backup, the browser saves the ZIP file to a
 location chosen or configured by the user. These are user-directed transfers and
 are the only ways Geef sends library media outside its extension storage.
@@ -106,7 +106,7 @@ IndexedDB data or exported ZIP backups.
 ## Limited Use
 
 Geef uses information obtained through Chrome extension APIs only to provide or
-improve its disclosed, user-facing GIF library and paste features. It does not
+improve its disclosed, user-facing media library and paste features. It does not
 use or transfer user data for advertising, profiling, creditworthiness, or any
 purpose unrelated to those features. The developer cannot access locally stored
 user data and does not permit humans to read it. Geef's use of information

@@ -2,32 +2,35 @@ import JSZip from "jszip";
 import {
   blobToDataUrl,
   bytesToHuman,
-  deleteGif,
+  deleteMedia,
   estimateStorage,
   getSetting,
-  getGifBlob,
-  getGifThumbnail,
+  getMediaBlob,
+  getMediaThumbnail,
   getLibraryUsage,
-  listGifs,
+  listMedia,
   listGroups,
   makeId,
   removeGroup,
   renameGroup,
   requestPersistentStorage,
-  saveGif,
-  saveGifThumbnail,
+  saveMedia,
+  saveMediaThumbnail,
   saveGroups,
   saveSetting,
-  touchGif,
-  updateGif,
+  touchMedia,
+  updateMedia,
 } from "./store.ts";
 import { convertVideoToGif } from "./gif-encoder.ts";
 import { pruneEmptyGroups } from "./group-utils.ts";
 import {
-  isGifFile,
+  ensureMediaFilename,
   isImportableMediaFile,
   isVideoFile,
+  mediaKind,
+  mediaMimeType,
 } from "./media-utils.ts";
+import { detectMediaMimeType } from "./media-signature.ts";
 import {
   matchesSiteAccessTarget,
   sitePermissionPattern,
@@ -42,7 +45,9 @@ const ALL_GROUPS = "__all__";
 const FAVORITES_GROUP = "__favorites__";
 const FALLBACK_GROUP = "General";
 const RECENT_LIMIT = 15;
-const ZIP_SCHEMA = "geef.group.v1";
+const ZIP_SCHEMA = "geef.group.v2";
+const ZIP_VERSION = 2;
+const LEGACY_ZIP_SCHEMA = "geef.group.v1";
 const MAX_ZIP_FILE_BYTES = 100 * 1024 ** 2;
 const MAX_ZIP_ENTRY_COUNT = 1000;
 const MAX_ZIP_METADATA_BYTES = 1024 ** 2;
@@ -53,6 +58,7 @@ const GRID_CELL_MIN_SETTING = "gridCellMin";
 const SHOW_RECENTLY_SETTING = "showRecently";
 const RESERVED_GROUP_LABELS = new Set(["all", "favorites"]);
 const PREVIEW_MODE = new URLSearchParams(location.search).has("preview");
+const NEW_GROUP_VALUE = "__new_group__";
 
 let settingsTabsDrag = null;
 let suppressSettingsTabClick = false;
@@ -63,6 +69,7 @@ let libraryScrollIdleTimer = null;
 let libraryIsScrolling = false;
 const gridGifIndex = new Map();
 let pendingImportArchive = null;
+let pendingMediaImport = null;
 
 const state = {
   gifs: [],
@@ -112,7 +119,7 @@ const el = {
   dataPanel: document.querySelector("#dataPanel"),
   dataCapacityMessage: document.querySelector("#dataCapacityMessage"),
   dataCapacityUsage: document.querySelector("#dataCapacityUsage"),
-  dataGifUsage: document.querySelector("#dataGifUsage"),
+  dataMediaUsage: document.querySelector("#dataMediaUsage"),
   dataThumbnailUsage: document.querySelector("#dataThumbnailUsage"),
   dataLibraryUsage: document.querySelector("#dataLibraryUsage"),
   dataGroupUsageList: document.querySelector("#dataGroupUsageList"),
@@ -121,6 +128,7 @@ const el = {
   previewFavorite: document.querySelector("#previewFavorite"),
   previewGroup: document.querySelector("#previewGroup"),
   previewImage: document.querySelector("#previewImage"),
+  previewVideo: document.querySelector("#previewVideo"),
   previewPaste: document.querySelector("#previewPaste"),
   previewRemove: document.querySelector("#previewRemove"),
   previewSave: document.querySelector("#previewSave"),
@@ -141,6 +149,14 @@ const el = {
   importFavoritesField: document.querySelector("#importFavoritesField"),
   importFavorites: document.querySelector("#importFavorites"),
   importConfirmButton: document.querySelector("#importConfirmButton"),
+  mediaImportDialog: document.querySelector("#mediaImportDialog"),
+  mediaImportCount: document.querySelector("#mediaImportCount"),
+  mediaImportGroup: document.querySelector("#mediaImportGroup"),
+  mediaImportNewGroupField: document.querySelector("#mediaImportNewGroupField"),
+  mediaImportNewGroup: document.querySelector("#mediaImportNewGroup"),
+  mediaImportConvertField: document.querySelector("#mediaImportConvertField"),
+  mediaImportConvertVideos: document.querySelector("#mediaImportConvertVideos"),
+  mediaImportConfirmButton: document.querySelector("#mediaImportConfirmButton"),
 };
 
 wireEvents();
@@ -168,8 +184,11 @@ function wireEvents() {
     importGroupZip(el.groupImportInput.files?.[0]),
   );
   el.importConfirmButton.addEventListener("click", confirmImportArchive);
-  el.exportAllButton.addEventListener("click", exportAllGifs);
-  el.dataRemoveAllButton.addEventListener("click", () => removeDataGifs());
+  el.mediaImportGroup.addEventListener("change", syncMediaImportGroupField);
+  el.mediaImportConfirmButton.addEventListener("click", confirmMediaImport);
+  el.mediaImportDialog.addEventListener("close", clearPendingMediaImport);
+  el.exportAllButton.addEventListener("click", exportAllMedia);
+  el.dataRemoveAllButton.addEventListener("click", () => removeDataMedia());
   el.gridCellMinInput.addEventListener("change", saveGridCellMin);
   el.gridCellMinInput.addEventListener("input", updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener("click", saveGridCellMin);
@@ -222,10 +241,16 @@ function wireEvents() {
     render();
   });
 
-  el.previewPaste.addEventListener("click", () => pasteGif(state.previewId));
+  el.previewPaste.addEventListener("click", () => pasteMedia(state.previewId));
   el.previewSave.addEventListener("click", savePreviewEdits);
-  el.previewRemove.addEventListener("click", () => removeGif(state.previewId));
+  el.previewRemove.addEventListener("click", () =>
+    removeMediaItem(state.previewId),
+  );
   el.previewDialog.addEventListener("click", closePreviewFromBackdrop);
+  el.previewDialog.addEventListener("close", () => {
+    el.previewVideo.pause();
+    el.previewVideo.removeAttribute("src");
+  });
 
   document.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -249,8 +274,8 @@ function beginLibraryScroll() {
 
 function pauseGridGifs() {
   el.sectionList
-    .querySelectorAll('img[data-playing="true"]')
-    .forEach(pauseGridGif);
+    .querySelectorAll('[data-playing="true"]')
+    .forEach(pauseGridMedia);
 }
 
 async function refresh() {
@@ -258,7 +283,7 @@ async function refresh() {
     if (!state.gifs.length) state.gifs = createPreviewLibrary();
     if (!state.groups.length) state.groups = deriveGifGroups(state.gifs);
   } else {
-    state.gifs = await listGifs();
+    state.gifs = await listMedia();
     state.groups = await listGroups();
     state.gridCellMin = normalizeGridCellMin(
       await getSetting(GRID_CELL_MIN_SETTING),
@@ -416,23 +441,35 @@ function createGifCard(gif) {
   tile.className = "gif-tile-button";
   tile.dataset.ui = "gif-card-paste-button";
   tile.setAttribute("aria-label", `Paste ${gif.title}`);
-  tile.addEventListener("click", () => pasteGif(gif.id));
+  tile.addEventListener("click", () => pasteMedia(gif.id));
 
-  const img = document.createElement("img");
-  img.dataset.ui = "gif-card-image";
-  img.alt = gif.title;
-  tile.append(img);
+  const visual = isVideoRecord(gif)
+    ? document.createElement("video")
+    : document.createElement("img");
+  visual.dataset.ui = "gif-card-image";
+  if (visual instanceof HTMLVideoElement) {
+    visual.muted = true;
+    visual.loop = true;
+    visual.playsInline = true;
+    visual.preload = "none";
+    visual.setAttribute("aria-label", gif.title);
+  } else {
+    visual.alt = gif.title;
+  }
+  tile.append(visual);
 
   const actions = document.createElement("div");
   actions.className = "gif-actions";
   actions.dataset.ui = "gif-card-actions";
   actions.append(favoriteButton(gif), editButton(gif));
 
-  card.addEventListener("pointerenter", () => playGridGif(gif.id, img));
-  card.addEventListener("pointerleave", () => pauseGridGif(img));
-  card.addEventListener("focusin", () => playGridGif(gif.id, img));
+  card.addEventListener("pointerenter", () =>
+    playGridMedia(gif.id, visual, gif),
+  );
+  card.addEventListener("pointerleave", () => pauseGridMedia(visual));
+  card.addEventListener("focusin", () => playGridMedia(gif.id, visual, gif));
   card.addEventListener("focusout", (event) => {
-    if (!card.contains(event.relatedTarget)) pauseGridGif(img);
+    if (!card.contains(event.relatedTarget)) pauseGridMedia(visual);
   });
 
   card.append(tile, actions);
@@ -459,15 +496,16 @@ async function handleThumbnailVisibility(entries) {
     if (!entry.isIntersecting) continue;
     thumbnailObserver.unobserve(entry.target);
     const gif = gridGifIndex.get(entry.target.dataset.gifId);
-    const image = entry.target.querySelector("img");
-    if (!gif || !image) continue;
+    const visual = entry.target.querySelector("img, video");
+    if (!gif || !visual) continue;
     const blob = await loadGifThumbnail(gif.id).catch(() =>
       loadGifBlob(gif.id),
     );
     if (!blob) continue;
     const url = objectUrlFor(gif.id, blob, "thumbnail");
-    image.src = url;
-    image.dataset.staticSrc = url;
+    if (visual instanceof HTMLVideoElement) visual.poster = url;
+    else visual.src = url;
+    visual.dataset.staticSrc = url;
     entry.target.classList.remove("is-thumbnail-loading");
   }
 }
@@ -514,42 +552,140 @@ async function importMediaFiles(files) {
   const selectedFiles = [...(files || [])];
   const mediaFiles = selectedFiles.filter(isImportableMediaFile);
   if (!mediaFiles.length) {
-    setStatus("Choose a GIF, MP4, or WebM file.");
+    setStatus("Choose an image, GIF, MP4, or WebM file.");
     return;
   }
 
-  let added = 0;
+  const importRequest = {
+    files: mediaFiles,
+    skippedCount: selectedFiles.length - mediaFiles.length,
+  };
+  if (mediaFiles.length > 1 || mediaFiles.some(isVideoFile)) {
+    pendingMediaImport = importRequest;
+    renderMediaImportDialog(importRequest);
+    el.mediaImportDialog.showModal();
+    return;
+  }
+
+  await performMediaImport(importRequest, {
+    group: currentImportGroup(),
+    convertVideos: false,
+  });
+}
+
+function renderMediaImportDialog(importRequest) {
+  const { files } = importRequest;
+  const videoCount = files.filter(isVideoFile).length;
+  const currentGroup = currentImportGroup();
+  const groups = normalizeGroupList([currentGroup, ...editableGroups()]);
+
+  el.mediaImportCount.textContent = `${itemCountText(files.length)} selected`;
+  el.mediaImportGroup.replaceChildren(
+    ...[
+      ...groups.map((group) => ({
+        value: group,
+        label: group === currentGroup ? `Current group: ${group}` : group,
+      })),
+      { value: NEW_GROUP_VALUE, label: "Create a new group…" },
+    ].map(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }),
+  );
+  el.mediaImportGroup.value = currentGroup;
+  el.mediaImportNewGroup.value = "";
+  el.mediaImportConvertVideos.checked = false;
+  el.mediaImportConvertField.hidden = videoCount === 0;
+  syncMediaImportGroupField();
+}
+
+function syncMediaImportGroupField() {
+  const creatingGroup = el.mediaImportGroup.value === NEW_GROUP_VALUE;
+  el.mediaImportNewGroupField.hidden = !creatingGroup;
+  if (creatingGroup)
+    requestAnimationFrame(() => el.mediaImportNewGroup.focus());
+}
+
+async function confirmMediaImport() {
+  if (!pendingMediaImport) return;
+  const creatingGroup = el.mediaImportGroup.value === NEW_GROUP_VALUE;
+  const group = creatingGroup
+    ? cleanGroup(el.mediaImportNewGroup.value)
+    : contentGroupName(el.mediaImportGroup.value);
+
+  if (creatingGroup && !el.mediaImportNewGroup.value.trim()) {
+    setStatus("Enter a name for the new group.");
+    el.mediaImportNewGroup.focus();
+    return;
+  }
+  if (!validateEditableGroup(group)) return;
+  if (creatingGroup && editableGroups().includes(group)) {
+    setStatus(`Group "${group}" already exists. Choose it from the list.`);
+    return;
+  }
+
+  const importRequest = pendingMediaImport;
+  const options = {
+    group,
+    convertVideos: el.mediaImportConvertVideos.checked,
+  };
+  pendingMediaImport = null;
+  el.mediaImportDialog.close();
+  await performMediaImport(importRequest, options);
+}
+
+function clearPendingMediaImport() {
+  pendingMediaImport = null;
+  el.fileInput.value = "";
+}
+
+async function performMediaImport(importRequest, options) {
+  const { files, skippedCount = 0 } = importRequest;
+  let imported = 0;
   let converted = 0;
 
   if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
-    for (const file of mediaFiles) {
-      if (isGifFile(file)) {
-        await saveImportedGif(file, file.name);
-        added += 1;
-        continue;
-      }
-
-      if (isVideoFile(file)) {
+    for (const file of files) {
+      if (isVideoFile(file) && options.convertVideos) {
         setProgress(0);
         const gifBlob = await convertVideoToGif(file, {}, setProgress);
-        await saveImportedGif(gifBlob, `${stripExtension(file.name)}.gif`);
+        await saveImportedMedia(
+          gifBlob,
+          `${stripExtension(file.name)}.gif`,
+          options.group,
+          "image/gif",
+        );
         converted += 1;
         setProgress(null);
+      } else {
+        await saveImportedMedia(
+          file,
+          file.name,
+          options.group,
+          mediaMimeType(file),
+        );
       }
+      imported += 1;
     }
 
-    const parts = [];
-    if (added) parts.push(`added ${added} GIF${added === 1 ? "" : "s"}`);
-    if (converted)
-      parts.push(`converted ${converted} video${converted === 1 ? "" : "s"}`);
-    setStatus(
-      parts.length
-        ? `Import complete: ${parts.join(", ")}.`
-        : "No supported files selected.",
-    );
+    state.activeGroup = options.group;
     await refresh();
+    const details = [];
+    if (converted)
+      details.push(
+        `converted ${converted} video${converted === 1 ? "" : "s"} to GIF`,
+      );
+    if (skippedCount)
+      details.push(
+        `skipped ${skippedCount} unsupported file${skippedCount === 1 ? "" : "s"}`,
+      );
+    setStatus(
+      `Imported ${itemCountText(imported)} to "${options.group}"${details.length ? ` (${details.join(", ")})` : ""}.`,
+    );
   } catch (error) {
     if (!(await showStorageCapacityHelp(error))) {
       setStatus(`Import failed: ${error.message}`);
@@ -561,17 +697,23 @@ async function importMediaFiles(files) {
   }
 }
 
-async function saveImportedGif(blob, filename) {
-  const dimensions = await readImageSize(blob).catch(() => ({
+async function saveImportedMedia(blob, filename, group, mimeType) {
+  const normalizedMimeType =
+    mediaMimeType({ name: filename, type: mimeType || blob.type }) || blob.type;
+  const normalizedFilename = ensureMediaFilename(filename, normalizedMimeType);
+  const mediaBlob = blob.slice(0, blob.size, normalizedMimeType);
+  const dimensions = await readMediaSize(mediaBlob).catch(() => ({
     width: 0,
     height: 0,
   }));
   const now = Date.now();
   const record = {
     id: makeId(),
-    title: stripExtension(filename),
-    filename: filename.endsWith(".gif") ? filename : `${filename}.gif`,
-    group: currentImportGroup(),
+    title: stripExtension(normalizedFilename),
+    filename: normalizedFilename,
+    mimeType: normalizedMimeType,
+    kind: mediaKind({ name: normalizedFilename, type: normalizedMimeType }),
+    group: contentGroupName(group),
     favorite: false,
     createdAt: now,
     updatedAt: now,
@@ -582,18 +724,17 @@ async function saveImportedGif(blob, filename) {
     height: dimensions.height,
   };
 
-  const gifBlob = blob.slice(0, blob.size, "image/gif");
   if (PREVIEW_MODE) {
-    state.previewBlobs.set(record.id, gifBlob);
+    state.previewBlobs.set(record.id, mediaBlob);
     state.gifs = [record, ...state.gifs];
     state.groups = normalizeGroupList([...state.groups, record.group]);
     return;
   }
-  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
+  const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob).catch(
     () => null,
   );
-  await ensureStorageCapacity(gifBlob.size + (thumbnailBlob?.size || 0));
-  await saveGif(record, gifBlob, thumbnailBlob);
+  await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
+  await saveMedia(record, mediaBlob, thumbnailBlob);
 }
 
 async function openPreview(id) {
@@ -602,8 +743,18 @@ async function openPreview(id) {
   if (!gif || !blob) return;
 
   state.previewId = id;
-  el.previewImage.src = objectUrlFor(id, blob);
-  el.previewImage.alt = gif.title;
+  const isVideo = isVideoRecord(gif, blob);
+  el.previewImage.hidden = isVideo;
+  el.previewVideo.hidden = !isVideo;
+  if (isVideo) {
+    el.previewVideo.src = objectUrlFor(id, blob, "preview");
+    el.previewVideo.setAttribute("aria-label", gif.title);
+  } else {
+    el.previewVideo.pause();
+    el.previewVideo.removeAttribute("src");
+    el.previewImage.src = objectUrlFor(id, blob, "preview");
+    el.previewImage.alt = gif.title;
+  }
   el.previewTitle.value = gif.title;
   el.previewGroup.value = gif.group || "General";
   el.previewFavorite.checked = Boolean(gif.favorite);
@@ -643,7 +794,7 @@ async function savePreviewEdits() {
     mutatePreviewGif(
       state.previewId,
       {
-        title: el.previewTitle.value.trim() || "Untitled GIF",
+        title: el.previewTitle.value.trim() || "Untitled media",
         group,
         favorite: el.previewFavorite.checked,
       },
@@ -653,17 +804,17 @@ async function savePreviewEdits() {
         ),
       },
     );
-    setStatus("Saved GIF details.");
+    setStatus("Saved media details.");
     el.previewDialog.close();
     return;
   }
 
-  await updateGif(state.previewId, {
-    title: el.previewTitle.value.trim() || "Untitled GIF",
+  await updateMedia(state.previewId, {
+    title: el.previewTitle.value.trim() || "Untitled media",
     group: contentGroupName(el.previewGroup.value),
     favorite: el.previewFavorite.checked,
   });
-  setStatus("Saved GIF details.");
+  setStatus("Saved media details.");
   await refresh();
   el.previewDialog.close();
 }
@@ -674,14 +825,14 @@ async function toggleFavorite(gif) {
     return;
   }
 
-  await updateGif(gif.id, { favorite: !gif.favorite });
+  await updateMedia(gif.id, { favorite: !gif.favorite });
   await refresh();
 }
 
-async function removeGif(id) {
+async function removeMediaItem(id) {
   if (!id) return;
   const gif = state.gifs.find((item) => item.id === id);
-  const ok = confirm(`Remove "${gif?.title || "this GIF"}"?`);
+  const ok = confirm(`Remove "${gif?.title || "this item"}"?`);
   if (!ok) return;
 
   if (PREVIEW_MODE) {
@@ -690,23 +841,23 @@ async function removeGif(id) {
     state.previewBlobs.delete(id);
     prunePreviewGroups();
     el.previewDialog.close();
-    setStatus("Removed GIF.");
+    setStatus("Removed media item.");
     render();
     return;
   }
 
-  await deleteGif(id);
+  await deleteMedia(id);
   revokeObjectUrl(id);
   el.previewDialog.close();
-  setStatus("Removed GIF.");
+  setStatus("Removed media item.");
   await refresh();
 }
 
-async function pasteGif(id) {
+async function pasteMedia(id) {
   if (!id) return;
   if (!PREVIEW_MODE && !state.siteAccess.granted) {
     showSiteAccessWarning(
-      `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+      `Allow Geef to paste media into ${state.siteAccess.label}.`,
       Boolean(state.siteAccess.pattern),
     );
     setStatus("Grant site access before pasting.");
@@ -729,14 +880,18 @@ async function pasteGif(id) {
   try {
     const dataUrl = await blobToDataUrl(blob);
     const result = await pasteToActiveTab({
-      type: "GEEF_INSERT_GIF",
-      filename: gif.filename || `${gif.title}.gif`,
+      type: "GEEF_INSERT_MEDIA",
+      filename: ensureMediaFilename(
+        gif.filename || gif.title,
+        recordMimeType(gif, blob),
+      ),
+      mimeType: recordMimeType(gif, blob),
       dataUrl,
     });
 
-    await touchGif(id);
+    await touchMedia(id);
     setStatus(
-      result?.ok ? "Pasted GIF." : result?.reason || "Could not paste GIF.",
+      result?.ok ? "Pasted media." : result?.reason || "Could not paste media.",
     );
     await refresh();
   } catch (error) {
@@ -1028,12 +1183,12 @@ async function renderDataPanel() {
     PREVIEW_MODE ? previewLibraryUsage() : getLibraryUsage(),
     PREVIEW_MODE ? null : estimateStorage().catch(() => null),
   ]);
-  const gifUsageText = `${bytesToHuman(usage.gifBytes)} · ${gifCountText(usage.gifCount)}`;
+  const mediaUsageText = `${bytesToHuman(usage.mediaBytes)} · ${itemCountText(usage.itemCount)}`;
   const thumbnailUsageText = bytesToHuman(usage.thumbnailBytes);
   const libraryUsageText = bytesToHuman(usage.totalBytes);
 
-  el.dataGifUsage.textContent = gifUsageText;
-  el.dataGifUsage.title = gifUsageText;
+  el.dataMediaUsage.textContent = mediaUsageText;
+  el.dataMediaUsage.title = mediaUsageText;
   el.dataThumbnailUsage.textContent = thumbnailUsageText;
   el.dataThumbnailUsage.title = thumbnailUsageText;
   el.dataLibraryUsage.textContent = libraryUsageText;
@@ -1044,7 +1199,7 @@ async function renderDataPanel() {
     const empty = document.createElement("div");
     empty.className = "group-editor-empty";
     empty.dataset.ui = "data-group-empty";
-    empty.textContent = "No stored GIFs";
+    empty.textContent = "No stored media";
     el.dataGroupUsageList.replaceChildren(empty);
     return;
   }
@@ -1061,13 +1216,15 @@ async function renderDataPanel() {
       const total = document.createElement("strong");
       total.textContent = bytesToHuman(group.totalBytes);
       const detail = document.createElement("span");
-      detail.textContent = `${gifCountText(group.gifCount)} · GIFs ${bytesToHuman(group.gifBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
+      detail.textContent = `${itemCountText(group.itemCount)} · Media ${bytesToHuman(group.mediaBytes)} · Thumbnails ${bytesToHuman(group.thumbnailBytes)}`;
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "danger-button";
       removeButton.dataset.ui = "data-group-remove-button";
       removeButton.textContent = "Remove";
-      removeButton.addEventListener("click", () => removeDataGifs(group.group));
+      removeButton.addEventListener("click", () =>
+        removeDataMedia(group.group),
+      );
       row.append(name, total, detail, removeButton);
       return row;
     }),
@@ -1113,14 +1270,14 @@ async function showStorageCapacityHelp(error) {
   return true;
 }
 
-async function removeDataGifs(group = null) {
+async function removeDataMedia(group = null) {
   const targets = state.gifs.filter(
     (gif) => !group || (gif.group || FALLBACK_GROUP) === group,
   );
   if (!targets.length) return;
   const label = group
-    ? `group "${group}" and its ${targets.length} GIF${targets.length === 1 ? "" : "s"}`
-    : `all ${targets.length} GIF${targets.length === 1 ? "" : "s"}`;
+    ? `group "${group}" and its ${itemCountText(targets.length)}`
+    : `all ${itemCountText(targets.length)}`;
   if (!confirm(`Remove ${label}? This cannot be undone.`)) return;
 
   if (PREVIEW_MODE) {
@@ -1129,8 +1286,8 @@ async function removeDataGifs(group = null) {
     state.gifs = state.gifs.filter((gif) => !targetIds.has(gif.id));
     state.groups = deriveGifGroups(state.gifs);
   } else {
-    for (const gif of targets) await deleteGif(gif.id);
-    state.gifs = await listGifs();
+    for (const gif of targets) await deleteMedia(gif.id);
+    state.gifs = await listMedia();
     state.groups = await listGroups();
   }
 
@@ -1142,30 +1299,30 @@ async function removeDataGifs(group = null) {
 
 function previewLibraryUsage() {
   const groups = new Map();
-  let gifBytes = 0;
+  let mediaBytes = 0;
 
   for (const gif of state.gifs) {
     const bytes = state.previewBlobs.get(gif.id)?.size || gif.size || 0;
     const group = gif.group || FALLBACK_GROUP;
     const usage = groups.get(group) || {
       group,
-      gifCount: 0,
-      gifBytes: 0,
+      itemCount: 0,
+      mediaBytes: 0,
       thumbnailBytes: 0,
       totalBytes: 0,
     };
-    usage.gifCount += 1;
-    usage.gifBytes += bytes;
-    usage.totalBytes = usage.gifBytes;
+    usage.itemCount += 1;
+    usage.mediaBytes += bytes;
+    usage.totalBytes = usage.mediaBytes;
     groups.set(group, usage);
-    gifBytes += bytes;
+    mediaBytes += bytes;
   }
 
   return {
-    gifCount: state.gifs.length,
-    gifBytes,
+    itemCount: state.gifs.length,
+    mediaBytes,
     thumbnailBytes: 0,
-    totalBytes: gifBytes,
+    totalBytes: mediaBytes,
     groups: [...groups.values()].sort(
       (a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group),
     ),
@@ -1348,7 +1505,7 @@ async function renameEditableGroup(oldGroup, rawNewGroup) {
     );
   } else {
     await renameGroup(oldGroup, nextGroup);
-    state.gifs = await listGifs();
+    state.gifs = await listMedia();
     state.groups = await listGroups();
   }
 
@@ -1360,7 +1517,7 @@ async function renameEditableGroup(oldGroup, rawNewGroup) {
 
 async function removeEditableGroup(group) {
   const ok = confirm(
-    `Remove "${group}"? GIFs in this group will move to ${FALLBACK_GROUP}.`,
+    `Remove "${group}"? Media in this group will move to ${FALLBACK_GROUP}.`,
   );
   if (!ok) return;
 
@@ -1375,7 +1532,7 @@ async function removeEditableGroup(group) {
     );
   } else {
     await removeGroup(group, FALLBACK_GROUP);
-    state.gifs = await listGifs();
+    state.gifs = await listMedia();
     state.groups = await listGroups();
   }
 
@@ -1393,33 +1550,40 @@ async function exportEditableGroup(group) {
     (gif) => (gif.group || FALLBACK_GROUP) === groupName,
   );
   if (!gifs.length) {
-    setStatus(`Group "${groupName}" has no GIFs to export.`);
+    setStatus(`Group "${groupName}" has no media to export.`);
     return;
   }
 
   setBusy(true);
   try {
     const usedPaths = new Set();
-    const gifEntries = [];
+    const mediaEntries = [];
     const metadata = {
       schema: ZIP_SCHEMA,
-      version: 1,
+      version: ZIP_VERSION,
       exportedAt: new Date().toISOString(),
       groupName,
-      gifs: [],
+      media: [],
     };
 
     for (const gif of sortGifs(gifs)) {
       const blob = await loadGifBlob(gif.id);
       if (!blob) continue;
 
-      const filename = ensureGifFilename(
-        gif.filename || `${gif.title || gif.id}.gif`,
+      const mimeType = recordMimeType(gif, blob);
+      const filename = ensureMediaFilename(
+        gif.filename || gif.title || gif.id,
+        mimeType,
       );
-      const path = uniqueZipPath(`gifs/${safeZipSegment(filename)}`, usedPaths);
-      metadata.gifs.push({
+      const path = uniqueZipPath(
+        `media/${safeZipSegment(filename)}`,
+        usedPaths,
+      );
+      metadata.media.push({
         title: gif.title || stripExtension(filename),
         filename,
+        mimeType,
+        kind: mediaKind({ name: filename, type: mimeType }),
         group: groupName,
         favorite: Boolean(gif.favorite),
         createdAt: gif.createdAt || 0,
@@ -1431,14 +1595,14 @@ async function exportEditableGroup(group) {
         height: gif.height || 0,
         path,
       });
-      gifEntries.push({
+      mediaEntries.push({
         name: path,
-        blob: blob.slice(0, blob.size, blob.type || "image/gif"),
+        blob: blob.slice(0, blob.size, mimeType),
       });
     }
 
-    if (!gifEntries.length) {
-      setStatus(`Could not read GIFs in "${groupName}".`);
+    if (!mediaEntries.length) {
+      setStatus(`Could not read media in "${groupName}".`);
       return;
     }
 
@@ -1449,12 +1613,12 @@ async function exportEditableGroup(group) {
           type: "application/json",
         }),
       },
-      ...gifEntries,
+      ...mediaEntries,
     ]);
 
     downloadBlob(zipBlob, `${safeZipSegment(groupName)}-geef.zip`);
     setStatus(
-      `Exported "${groupName}" (${gifEntries.length} GIF${gifEntries.length === 1 ? "" : "s"}).`,
+      `Exported "${groupName}" (${itemCountText(mediaEntries.length)}).`,
     );
   } catch (error) {
     setStatus(`Export failed: ${error.message}`);
@@ -1463,35 +1627,42 @@ async function exportEditableGroup(group) {
   }
 }
 
-async function exportAllGifs() {
+async function exportAllMedia() {
   if (!state.gifs.length) {
-    setStatus("No GIFs to export.");
+    setStatus("No media to export.");
     return;
   }
 
   setBusy(true);
   try {
     const usedPaths = new Set();
-    const gifEntries = [];
+    const mediaEntries = [];
     const metadata = {
       schema: ZIP_SCHEMA,
-      version: 1,
+      version: ZIP_VERSION,
       scope: "library",
       exportedAt: new Date().toISOString(),
-      gifs: [],
+      media: [],
     };
 
     for (const gif of sortGifs(state.gifs)) {
       const blob = await loadGifBlob(gif.id);
       if (!blob) continue;
 
-      const filename = ensureGifFilename(
-        gif.filename || `${gif.title || gif.id}.gif`,
+      const mimeType = recordMimeType(gif, blob);
+      const filename = ensureMediaFilename(
+        gif.filename || gif.title || gif.id,
+        mimeType,
       );
-      const path = uniqueZipPath(`gifs/${safeZipSegment(filename)}`, usedPaths);
-      metadata.gifs.push({
+      const path = uniqueZipPath(
+        `media/${safeZipSegment(filename)}`,
+        usedPaths,
+      );
+      metadata.media.push({
         title: gif.title || stripExtension(filename),
         filename,
+        mimeType,
+        kind: mediaKind({ name: filename, type: mimeType }),
         group: cleanGroup(gif.group || FALLBACK_GROUP),
         favorite: Boolean(gif.favorite),
         createdAt: gif.createdAt || 0,
@@ -1503,14 +1674,14 @@ async function exportAllGifs() {
         height: gif.height || 0,
         path,
       });
-      gifEntries.push({
+      mediaEntries.push({
         name: path,
-        blob: blob.slice(0, blob.size, blob.type || "image/gif"),
+        blob: blob.slice(0, blob.size, mimeType),
       });
     }
 
-    if (!gifEntries.length) {
-      setStatus("Could not read any GIFs to export.");
+    if (!mediaEntries.length) {
+      setStatus("Could not read any media to export.");
       return;
     }
 
@@ -1521,13 +1692,11 @@ async function exportAllGifs() {
           type: "application/json",
         }),
       },
-      ...gifEntries,
+      ...mediaEntries,
     ]);
 
     downloadBlob(zipBlob, "geef-backup.zip");
-    setStatus(
-      `Exported backup (${gifEntries.length} GIF${gifEntries.length === 1 ? "" : "s"}).`,
-    );
+    setStatus(`Exported backup (${itemCountText(mediaEntries.length)}).`);
   } catch (error) {
     setStatus(`Export failed: ${error.message}`);
   } finally {
@@ -1547,28 +1716,45 @@ async function importGroupZip(file) {
       archive.readBudget,
     );
     const metadata = JSON.parse(new TextDecoder().decode(metadataBytes));
-    if (metadata.schema !== ZIP_SCHEMA || metadata.version !== 1) {
+    const isLegacyArchive =
+      metadata.schema === LEGACY_ZIP_SCHEMA && metadata.version === 1;
+    const isCurrentArchive =
+      metadata.schema === ZIP_SCHEMA && metadata.version === ZIP_VERSION;
+    if (!isLegacyArchive && !isCurrentArchive) {
       throw new Error("The backup schema or version is not supported.");
     }
-    const gifs = Array.isArray(metadata.gifs) ? metadata.gifs : [];
-    if (!gifs.length) throw new Error("metadata.json has no GIF records.");
-    if (gifs.length > MAX_ZIP_ENTRY_COUNT) {
+    const media = isLegacyArchive
+      ? Array.isArray(metadata.gifs)
+        ? metadata.gifs
+        : []
+      : Array.isArray(metadata.media)
+        ? metadata.media
+        : [];
+    if (!media.length) throw new Error("metadata.json has no media records.");
+    if (media.length > MAX_ZIP_ENTRY_COUNT) {
       throw new Error(
-        `The backup contains more than ${MAX_ZIP_ENTRY_COUNT} GIF records.`,
+        `The backup contains more than ${MAX_ZIP_ENTRY_COUNT} media records.`,
       );
     }
     const groups = [
       ...new Set(
-        gifs.map((gif) =>
+        media.map((item) =>
           importGroupName(
-            gif.group || metadata.groupName || stripExtension(file.name),
+            item.group || metadata.groupName || stripExtension(file.name),
           ),
         ),
       ),
     ];
-    pendingImportArchive = { ...archive, metadata, gifs, file, groups };
+    pendingImportArchive = {
+      ...archive,
+      metadata,
+      media,
+      file,
+      groups,
+      isLegacyArchive,
+    };
     renderImportGroupList(groups);
-    el.importFavoritesField.hidden = !gifs.some((gif) => gif.favorite);
+    el.importFavoritesField.hidden = !media.some((item) => item.favorite);
     el.importFavorites.checked = true;
     el.importDialog.showModal();
   } catch (error) {
@@ -1613,7 +1799,7 @@ async function confirmImportArchive() {
     renderSettingsEditor();
     const count = imported.reduce((total, result) => total + result.count, 0);
     setStatus(
-      `Imported ${count} GIF${count === 1 ? "" : "s"} from ${imported.length} group${imported.length === 1 ? "" : "s"}.`,
+      `Imported ${itemCountText(count)} from ${imported.length} group${imported.length === 1 ? "" : "s"}.`,
     );
   } catch (error) {
     if (!(await showStorageCapacityHelp(error))) {
@@ -1653,11 +1839,11 @@ function renderImportGroupList(groups) {
 
 async function importGroupArchive(archive, options = {}) {
   const { metadata, file } = archive;
-  const gifs = archive.gifs.filter(
-    (gif) =>
+  const media = archive.media.filter(
+    (item) =>
       !options.sourceGroup ||
       importGroupName(
-        gif.group || metadata.groupName || stripExtension(file.name),
+        item.group || metadata.groupName || stripExtension(file.name),
       ) === options.sourceGroup,
   );
 
@@ -1668,26 +1854,32 @@ async function importGroupArchive(archive, options = {}) {
   const importedGroups = new Set();
   let importedCount = 0;
 
-  for (const item of gifs) {
+  for (const item of media) {
     const path = cleanZipLookupName(
-      item.path || item.archivePath || `gifs/${item.filename || ""}`,
+      item.path ||
+        item.archivePath ||
+        `${archive.isLegacyArchive ? "gifs" : "media"}/${item.filename || ""}`,
     );
-    const entryBlob = await readArchiveGifBlob(archive, path);
+    const entryBlob = await readArchiveMediaBlob(archive, path, item);
     if (!entryBlob) continue;
 
     archive.importedBytes += entryBlob.size;
     if (archive.importedBytes > MAX_ZIP_TOTAL_BYTES) {
-      throw new Error("The selected GIFs exceed the backup import size limit.");
+      throw new Error(
+        "The selected media exceed the backup import size limit.",
+      );
     }
 
-    const filename = ensureGifFilename(
-      item.filename || zipBasename(path) || `${item.title || "imported"}.gif`,
+    const mimeType = entryBlob.type;
+    const filename = ensureMediaFilename(
+      item.filename || zipBasename(path) || item.title || "imported",
+      mimeType,
     );
-    const gifBlob = entryBlob.slice(0, entryBlob.size, "image/gif");
+    const mediaBlob = entryBlob.slice(0, entryBlob.size, mimeType);
     const dimensions = importDimensions(item);
     const measuredDimensions =
       dimensions ||
-      (await readImageSize(gifBlob).catch(() => ({ width: 0, height: 0 })));
+      (await readMediaSize(mediaBlob).catch(() => ({ width: 0, height: 0 })));
     const now = Date.now();
     const recordGroup =
       options.destinationGroup ||
@@ -1698,6 +1890,8 @@ async function importGroupArchive(archive, options = {}) {
       id: makeId(),
       title: cleanTitle(item.title || stripExtension(filename)),
       filename,
+      mimeType,
+      kind: mediaKind({ name: filename, type: mimeType }),
       group: recordGroup,
       favorite:
         options.includeFavorites === false ? false : Boolean(item.favorite),
@@ -1705,27 +1899,27 @@ async function importGroupArchive(archive, options = {}) {
       updatedAt: now,
       lastUsedAt: validTimestamp(item.lastUsedAt, 0),
       useCount: validCount(item.useCount),
-      size: gifBlob.size,
+      size: mediaBlob.size,
       width: measuredDimensions.width,
       height: measuredDimensions.height,
     };
 
     if (PREVIEW_MODE) {
-      state.previewBlobs.set(record.id, gifBlob);
+      state.previewBlobs.set(record.id, mediaBlob);
       state.gifs = [record, ...state.gifs];
     } else {
-      const thumbnailBlob = await createStaticThumbnailBlob(gifBlob).catch(
+      const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob).catch(
         () => null,
       );
-      await ensureStorageCapacity(gifBlob.size + (thumbnailBlob?.size || 0));
-      await saveGif(record, gifBlob, thumbnailBlob);
+      await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
+      await saveMedia(record, mediaBlob, thumbnailBlob);
     }
     importedGroups.add(recordGroup);
     importedCount += 1;
   }
 
   if (!importedCount)
-    throw new Error("No GIF files from metadata could be found.");
+    throw new Error("No media files from metadata could be found.");
 
   state.activeGroup = isLibraryBackup ? ALL_GROUPS : groupName;
   if (PREVIEW_MODE)
@@ -1771,7 +1965,7 @@ function isReservedGroupLabel(group) {
 }
 
 async function loadGifBlob(id) {
-  return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getGifBlob(id);
+  return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getMediaBlob(id);
 }
 
 async function loadGifThumbnail(id) {
@@ -1788,36 +1982,50 @@ async function loadGifThumbnail(id) {
 }
 
 async function loadOrCreateGifThumbnail(id) {
-  const cached = await getGifThumbnail(id);
+  const cached = await getMediaThumbnail(id);
   if (cached) return cached;
 
-  const gifBlob = await getGifBlob(id);
-  if (!gifBlob) return null;
+  const mediaBlob = await getMediaBlob(id);
+  if (!mediaBlob) return null;
 
-  const thumbnailBlob = await createStaticThumbnailBlob(gifBlob);
+  const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob);
   try {
-    await saveGifThumbnail(id, thumbnailBlob);
+    await saveMediaThumbnail(id, thumbnailBlob);
   } catch (error) {
     if (!isStorageCapacityError(error)) throw error;
   }
   return thumbnailBlob;
 }
 
-async function playGridGif(id, image) {
+async function playGridMedia(id, visual, record) {
   if (libraryIsScrolling) return;
-  image.dataset.playing = "true";
+  const mimeType = recordMimeType(record);
+  if (mimeType !== "image/gif" && !mimeType.startsWith("video/")) return;
+
+  visual.dataset.playing = "true";
   const blob = await loadGifBlob(id);
-  if (!blob || image.dataset.playing !== "true") return;
-  image.src = objectUrlFor(id, blob, "gif");
+  if (!blob || visual.dataset.playing !== "true") return;
+  visual.src = objectUrlFor(id, blob, "media");
+  if (visual instanceof HTMLVideoElement) visual.play().catch(() => {});
 }
 
-function pauseGridGif(image) {
-  image.dataset.playing = "false";
-  if (image.dataset.staticSrc) image.src = image.dataset.staticSrc;
+function pauseGridMedia(visual) {
+  visual.dataset.playing = "false";
+  if (visual instanceof HTMLVideoElement) {
+    visual.pause();
+    visual.removeAttribute("src");
+    visual.load();
+  } else if (visual.dataset.staticSrc) {
+    visual.src = visual.dataset.staticSrc;
+  }
 }
 
-async function createStaticThumbnailBlob(blob) {
+async function createMediaThumbnailBlob(blob) {
   if (blob.type === "image/svg+xml") return blob;
+
+  if (blob.type.startsWith("video/")) {
+    return createVideoThumbnailBlob(blob);
+  }
 
   const { image, cleanup } = await loadImageFromBlob(blob);
   try {
@@ -1852,9 +2060,70 @@ function loadImageFromBlob(blob) {
     image.onload = () => resolve({ image, cleanup });
     image.onerror = () => {
       cleanup();
-      reject(new Error("Could not create GIF thumbnail."));
+      reject(new Error("Could not create image thumbnail."));
     };
     image.src = url;
+  });
+}
+
+async function createVideoThumbnailBlob(blob) {
+  const { video, cleanup } = await loadVideoFromBlob(blob, true);
+  try {
+    const { width, height } = fitThumbnailSize(
+      video.videoWidth,
+      video.videoHeight,
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not draw video thumbnail.");
+    context.drawImage(video, 0, 0, width, height);
+    return (
+      (await canvasToBlob(canvas, "image/webp", 0.78)) ||
+      (await canvasToBlob(canvas, "image/png"))
+    );
+  } finally {
+    cleanup();
+  }
+}
+
+function loadVideoFromBlob(blob, needsFrame = false) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    let timeout = null;
+    const cleanupListeners = () => {
+      clearTimeout(timeout);
+      video.removeEventListener("loadedmetadata", handleLoaded);
+      video.removeEventListener("loadeddata", handleLoaded);
+      video.removeEventListener("error", handleError);
+    };
+    const cleanup = () => {
+      cleanupListeners();
+      URL.revokeObjectURL(url);
+    };
+    const handleLoaded = () => {
+      if (needsFrame && video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
+        return;
+      cleanupListeners();
+      resolve({ video, cleanup });
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error("Could not read video."));
+    };
+
+    timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out reading video."));
+    }, 10000);
+    video.muted = true;
+    video.preload = needsFrame ? "auto" : "metadata";
+    video.addEventListener("loadedmetadata", handleLoaded);
+    if (needsFrame) video.addEventListener("loadeddata", handleLoaded);
+    video.addEventListener("error", handleError, { once: true });
+    video.src = url;
   });
 }
 
@@ -1986,7 +2255,7 @@ async function pasteToActiveTab(payload) {
     state.siteAccess.pattern = pattern;
     state.siteAccess.label = new URL(tab.url).hostname;
     showSiteAccessWarning(
-      `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+      `Allow Geef to paste media into ${state.siteAccess.label}.`,
       true,
     );
     throw new Error("Grant site access before pasting.");
@@ -2034,7 +2303,7 @@ async function refreshSiteAccess() {
 
     if (!state.siteAccess.granted) {
       showSiteAccessWarning(
-        `Allow Geef to paste GIFs into ${state.siteAccess.label}.`,
+        `Allow Geef to paste media into ${state.siteAccess.label}.`,
         true,
       );
       return;
@@ -2248,8 +2517,8 @@ function stripExtension(filename) {
   return filename.replace(/\.[^.]+$/, "");
 }
 
-function gifCountText(count) {
-  return `${count} GIF${count === 1 ? "" : "s"}`;
+function itemCountText(count) {
+  return `${count} item${count === 1 ? "" : "s"}`;
 }
 
 function objectUrlFor(id, blob, variant = "gif") {
@@ -2269,6 +2538,25 @@ function revokeObjectUrl(id) {
   }
 }
 
+function recordMimeType(record, blob = null) {
+  return (
+    mediaMimeType({
+      name: record?.filename || "",
+      type: record?.mimeType || blob?.type || "",
+    }) || "image/gif"
+  );
+}
+
+function isVideoRecord(record, blob = null) {
+  return recordMimeType(record, blob).startsWith("video/");
+}
+
+function readMediaSize(blob) {
+  return blob.type.startsWith("video/")
+    ? readVideoSize(blob)
+    : readImageSize(blob);
+}
+
 function readImageSize(blob) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
@@ -2279,10 +2567,19 @@ function readImageSize(blob) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Could not read GIF dimensions."));
+      reject(new Error("Could not read image dimensions."));
     };
     image.src = url;
   });
+}
+
+async function readVideoSize(blob) {
+  const { video, cleanup } = await loadVideoFromBlob(blob);
+  try {
+    return { width: video.videoWidth, height: video.videoHeight };
+  } finally {
+    cleanup();
+  }
 }
 
 async function createZipBlob(entries) {
@@ -2378,7 +2675,7 @@ function readZipEntryBytes(entry, maxBytes, budget) {
   });
 }
 
-async function readArchiveGifBlob(archive, path) {
+async function readArchiveMediaBlob(archive, path, item) {
   const key = cleanZipLookupName(path).toLowerCase();
   if (archive.entryCache.has(key)) return archive.entryCache.get(key);
 
@@ -2389,19 +2686,25 @@ async function readArchiveGifBlob(archive, path) {
     MAX_ZIP_ENTRY_BYTES,
     archive.readBudget,
   );
-  if (!hasGifSignature(bytes)) {
+  const detectedMimeType = detectMediaMimeType(bytes);
+  if (!detectedMimeType) {
+    throw new Error(`ZIP entry ${entry.name} is not a supported media file.`);
+  }
+  if (archive.isLegacyArchive && detectedMimeType !== "image/gif") {
     throw new Error(`ZIP entry ${entry.name} is not a GIF file.`);
   }
 
-  const blob = new Blob([bytes], { type: "image/gif" });
+  const declaredMimeType = mediaMimeType({
+    name: item.filename || path,
+    type: item.mimeType || "",
+  });
+  if (declaredMimeType && declaredMimeType !== detectedMimeType) {
+    throw new Error(`ZIP entry ${entry.name} does not match its media type.`);
+  }
+
+  const blob = new Blob([bytes], { type: detectedMimeType });
   archive.entryCache.set(key, blob);
   return blob;
-}
-
-function hasGifSignature(bytes) {
-  if (bytes.byteLength < 6) return false;
-  const signature = String.fromCharCode(...bytes.subarray(0, 6));
-  return signature === "GIF87a" || signature === "GIF89a";
 }
 
 function isUnsafeZipPath(name) {
@@ -2449,14 +2752,7 @@ function validCount(value) {
 }
 
 function cleanTitle(value) {
-  return (value || "Untitled GIF").trim().slice(0, 80) || "Untitled GIF";
-}
-
-function ensureGifFilename(filename) {
-  const safeName = safeZipSegment(filename || "gif.gif");
-  return /\.gif$/i.test(safeName)
-    ? safeName
-    : `${stripExtension(safeName)}.gif`;
+  return (value || "Untitled media").trim().slice(0, 80) || "Untitled media";
 }
 
 function safeZipSegment(value) {

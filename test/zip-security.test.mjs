@@ -5,9 +5,10 @@ import { readFile } from "node:fs/promises";
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("ZIP imports use local JSZip with explicit resource limits", async () => {
-  const [html, script] = await Promise.all([
+  const [html, script, signatures] = await Promise.all([
     read("../src/sidepanel.html"),
     read("../src/sidepanel.ts"),
+    read("../src/media-signature.ts"),
   ]);
 
   assert.doesNotMatch(html, /vendor\/jszip/);
@@ -17,6 +18,9 @@ test("ZIP imports use local JSZip with explicit resource limits", async () => {
   assert.match(script, /MAX_ZIP_ENTRY_BYTES/);
   assert.match(script, /MAX_ZIP_TOTAL_BYTES/);
   assert.match(script, /entry\.internalStream\("uint8array"\)/);
-  assert.match(script, /hasGifSignature\(bytes\)/);
+  assert.match(script, /detectMediaMimeType\(bytes\)/);
+  assert.match(signatures, /hasGifSignature\(bytes\)/);
+  assert.match(script, /LEGACY_ZIP_SCHEMA/);
+  assert.match(script, /metadata\.media/);
   assert.doesNotMatch(script, /new DecompressionStream/);
 });

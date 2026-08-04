@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-test("paste returns to the last editor focused before the side panel", async () => {
+test("mixed-media paste returns to the last editor focused before the side panel", async () => {
   const source = await readFile(
     new URL("../src/content-script.ts", import.meta.url),
     "utf8",
@@ -73,7 +73,9 @@ test("paste returns to the last editor focused before the side panel", async () 
       },
     },
     document,
-    fetch: async () => ({ blob: async () => new Blob(["gif"]) }),
+    fetch: async () => ({
+      blob: async () => new Blob(["png"], { type: "image/png" }),
+    }),
     globalThis: {},
   });
 
@@ -83,9 +85,10 @@ test("paste returns to the last editor focused before the side panel", async () 
   const response = await new Promise((resolve) => {
     messageListener(
       {
-        type: "GEEF_INSERT_GIF",
-        filename: "reaction.gif",
-        dataUrl: "data:image/gif;base64,R0lGODlh",
+        type: "GEEF_INSERT_MEDIA",
+        filename: "reaction.png",
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,iVBORw0KGgo=",
       },
       { id: "geef-test" },
       resolve,
@@ -97,5 +100,6 @@ test("paste returns to the last editor focused before the side panel", async () 
   assert.equal(document.activeElement, editor);
   assert.equal(pastedEvents.length, 1);
   assert.equal(pastedEvents[0].type, "paste");
-  assert.equal(pastedEvents[0].clipboardData.file.name, "reaction.gif");
+  assert.equal(pastedEvents[0].clipboardData.file.name, "reaction.png");
+  assert.equal(pastedEvents[0].clipboardData.file.type, "image/png");
 });

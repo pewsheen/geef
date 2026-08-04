@@ -14,6 +14,22 @@
   ];
 
   const MAX_DATA_URL_LENGTH = 70 * 1024 ** 2;
+  const SUPPORTED_MEDIA_TYPES = new Set([
+    "image/gif",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "video/mp4",
+    "video/webm",
+  ]);
+  const EXTENSIONS_BY_MEDIA_TYPE = {
+    "image/gif": ["gif"],
+    "image/png": ["png"],
+    "image/jpeg": ["jpg", "jpeg"],
+    "image/webp": ["webp"],
+    "video/mp4": ["mp4"],
+    "video/webm": ["webm"],
+  };
   let lastEditableInput = isEditable(document.activeElement)
     ? document.activeElement
     : null;
@@ -29,25 +45,30 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (
       sender.id !== chrome.runtime.id ||
-      message?.type !== "GEEF_INSERT_GIF"
+      message?.type !== "GEEF_INSERT_MEDIA"
     ) {
       return false;
     }
 
-    insertGif(message)
+    insertMedia(message)
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, reason: error.message }));
 
     return true;
   });
 
-  async function insertGif(message) {
+  async function insertMedia(message) {
+    const mimeType = dataUrlMimeType(message.dataUrl);
     if (
       typeof message.dataUrl !== "string" ||
-      !message.dataUrl.startsWith("data:image/gif;base64,") ||
+      !SUPPORTED_MEDIA_TYPES.has(mimeType) ||
+      (message.mimeType && message.mimeType !== mimeType) ||
       message.dataUrl.length > MAX_DATA_URL_LENGTH
     ) {
-      return { ok: false, reason: "The GIF payload is invalid or too large." };
+      return {
+        ok: false,
+        reason: "The media payload is invalid or too large.",
+      };
     }
 
     const target = findEditableInput();
@@ -58,7 +79,8 @@
 
     const file = await dataUrlToFile(
       message.dataUrl,
-      safeGifFilename(message.filename),
+      safeMediaFilename(message.filename, mimeType),
+      mimeType,
     );
     const pasted = pasteFile(target, file);
 
@@ -94,11 +116,11 @@
     return element.isContentEditable;
   }
 
-  async function dataUrlToFile(dataUrl, filename) {
+  async function dataUrlToFile(dataUrl, filename, mimeType) {
     const response = await fetch(dataUrl);
     const blob = await response.blob();
     return new File([blob], filename, {
-      type: "image/gif",
+      type: mimeType,
       lastModified: Date.now(),
     });
   }
@@ -144,10 +166,21 @@
     document.execCommand("insertText", false, text);
   }
 
-  function safeGifFilename(value) {
-    const filename = String(value || "geef.gif")
+  function dataUrlMimeType(value) {
+    if (typeof value !== "string") return "";
+    const match = value.match(/^data:([^;,]+);base64,/i);
+    return match?.[1]?.toLowerCase() || "";
+  }
+
+  function safeMediaFilename(value, mimeType) {
+    const extensions = EXTENSIONS_BY_MEDIA_TYPE[mimeType];
+    const extension = extensions[0];
+    const filename = String(value || `geef.${extension}`)
       .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
       .slice(0, 120);
-    return /\.gif$/i.test(filename) ? filename : `${filename}.gif`;
+    const extensionPattern = new RegExp(`\\.(?:${extensions.join("|")})$`, "i");
+    if (extensionPattern.test(filename)) return filename;
+    const stem = filename.replace(/\.[^.]+$/, "") || "geef";
+    return `${stem}.${extension}`;
   }
 })();

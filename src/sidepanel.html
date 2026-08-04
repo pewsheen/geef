@@ -19,7 +19,7 @@
           id="fileInput"
           data-ui="media-file-input"
           type="file"
-          accept="image/gif,video/mp4,video/webm,.gif,.mp4,.webm"
+          accept="image/gif,image/png,image/jpeg,image/webp,video/mp4,video/webm,.gif,.png,.jpg,.jpeg,.webp,.mp4,.webm"
           multiple
           hidden
         />
@@ -28,7 +28,7 @@
           class="icon-button add-file-button"
           data-ui="add-file-button"
           type="button"
-          title="Add GIF, MP4, or WebM"
+          title="Add pictures, GIFs, MP4s, or WebMs"
         >
           +
         </button>
@@ -76,7 +76,7 @@
               id="groupBar"
               class="group-bar"
               data-ui="group-bar"
-              aria-label="GIF groups"
+              aria-label="Media groups"
             ></nav>
           </div>
           <button
@@ -98,14 +98,14 @@
             id="searchInput"
             data-ui="search-input"
             type="search"
-            placeholder="Search GIFs"
+            placeholder="Search media"
           />
         </section>
 
         <section
           class="section-list"
           data-ui="section-list"
-          aria-label="GIF library"
+          aria-label="Media library"
         >
           <div
             id="sectionList"
@@ -113,9 +113,9 @@
             data-ui="section-list-inner"
           ></div>
           <div id="emptyState" class="empty-state" data-ui="empty-state" hidden>
-            <strong data-ui="empty-state-title">No GIFs yet</strong>
+            <strong data-ui="empty-state-title">No media yet</strong>
             <span data-ui="empty-state-copy"
-              >Drop a GIF, MP4, or WebM here to start the wall.</span
+              >Drop pictures, GIFs, MP4s, or WebMs here to start a pack.</span
             >
           </div>
         </section>
@@ -235,10 +235,10 @@
           <div
             class="grid-cell-preview"
             data-ui="grid-cell-preview"
-            aria-label="GIF cell size preview"
+            aria-label="Media cell size preview"
           >
             <div id="gridCellPreviewTile" class="grid-cell-preview-tile">
-              <span>GIF cell</span>
+              <span>Media cell</span>
               <strong id="gridCellPreviewLabel">110px</strong>
             </div>
           </div>
@@ -327,8 +327,8 @@
           hidden
         >
           <div class="data-totals" data-ui="data-totals">
-            <div data-ui="data-gif-total">
-              <span>GIFs</span><strong id="dataGifUsage">0 B</strong>
+            <div data-ui="data-media-total">
+              <span>Media</span><strong id="dataMediaUsage">0 B</strong>
             </div>
             <div data-ui="data-thumbnail-total">
               <span>Thumbnails</span
@@ -356,7 +356,7 @@
             data-ui="data-remove-all-button"
             type="button"
           >
-            Remove all GIFs
+            Remove all media
           </button>
 
           <div class="data-group-section" data-ui="data-group-section">
@@ -374,7 +374,7 @@
     <dialog id="previewDialog" class="preview-dialog" data-ui="preview-dialog">
       <form method="dialog" data-ui="preview-form">
         <header data-ui="preview-header">
-          <strong data-ui="preview-title">GIF details</strong>
+          <strong data-ui="preview-title">Media details</strong>
           <button
             value="cancel"
             class="icon-button close-button"
@@ -386,6 +386,15 @@
         </header>
 
         <img id="previewImage" data-ui="preview-image" alt="" />
+        <video
+          id="previewVideo"
+          data-ui="preview-video"
+          controls
+          loop
+          muted
+          playsinline
+          hidden
+        ></video>
 
         <label data-ui="preview-name-field">
           <span data-ui="preview-name-label">Name</span>
@@ -441,6 +450,62 @@
             type="button"
           >
             Remove
+          </button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog
+      id="mediaImportDialog"
+      class="preview-dialog media-import-dialog"
+      data-ui="media-import-dialog"
+    >
+      <form method="dialog" data-ui="media-import-form">
+        <header>
+          <strong>Import media</strong>
+          <button
+            value="cancel"
+            class="icon-button close-button"
+            type="submit"
+            aria-label="Close"
+          ></button>
+        </header>
+        <p id="mediaImportCount" class="dialog-summary">0 items selected</p>
+        <label>
+          <span>Destination group</span>
+          <select id="mediaImportGroup" data-ui="media-import-group"></select>
+        </label>
+        <label id="mediaImportNewGroupField" hidden>
+          <span>New group name</span>
+          <input
+            id="mediaImportNewGroup"
+            data-ui="media-import-new-group"
+            type="text"
+            maxlength="32"
+            placeholder="Sticker pack name"
+          />
+        </label>
+        <label
+          id="mediaImportConvertField"
+          class="checkbox-row"
+          data-ui="media-import-convert-field"
+          hidden
+        >
+          <input
+            id="mediaImportConvertVideos"
+            data-ui="media-import-convert-videos"
+            type="checkbox"
+          />
+          <span>Convert videos to GIF for messenger autoplay</span>
+        </label>
+        <menu>
+          <button value="cancel" type="submit">Cancel</button>
+          <button
+            id="mediaImportConfirmButton"
+            class="primary-button"
+            type="button"
+          >
+            Import
           </button>
         </menu>
       </form>

@@ -17,7 +17,7 @@ export function makeId() {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export async function listGifs() {
+export async function listMedia() {
   const db = await openDb();
   const records = await request(
     db.transaction("gifs", "readonly").objectStore("gifs").getAll(),
@@ -36,12 +36,12 @@ export async function listGroups() {
 export async function getLibraryUsage() {
   const db = await openDb();
   const tx = db.transaction(["gifs", "blobs", "thumbnails"], "readonly");
-  const [gifs, blobs, thumbnails] = await Promise.all([
+  const [media, blobs, thumbnails] = await Promise.all([
     request(tx.objectStore("gifs").getAll()),
     request(tx.objectStore("blobs").getAll()),
     request(tx.objectStore("thumbnails").getAll()),
   ]);
-  const gifBytesById = new Map(
+  const mediaBytesById = new Map(
     blobs.map((item) => [item.id, item.blob?.size || 0]),
   );
   const thumbnailBytesById = new Map(
@@ -49,23 +49,23 @@ export async function getLibraryUsage() {
   );
   const groups = new Map();
 
-  for (const gif of gifs) {
-    const group = gif.group || DEFAULT_GROUP;
+  for (const item of media) {
+    const group = item.group || DEFAULT_GROUP;
     const usage = groups.get(group) || {
       group,
-      gifCount: 0,
-      gifBytes: 0,
+      itemCount: 0,
+      mediaBytes: 0,
       thumbnailBytes: 0,
       totalBytes: 0,
     };
-    usage.gifCount += 1;
-    usage.gifBytes += gifBytesById.get(gif.id) || 0;
-    usage.thumbnailBytes += thumbnailBytesById.get(gif.id) || 0;
-    usage.totalBytes = usage.gifBytes + usage.thumbnailBytes;
+    usage.itemCount += 1;
+    usage.mediaBytes += mediaBytesById.get(item.id) || 0;
+    usage.thumbnailBytes += thumbnailBytesById.get(item.id) || 0;
+    usage.totalBytes = usage.mediaBytes + usage.thumbnailBytes;
     groups.set(group, usage);
   }
 
-  const gifBytes = [...gifBytesById.values()].reduce(
+  const mediaBytes = [...mediaBytesById.values()].reduce(
     (total, bytes) => total + bytes,
     0,
   );
@@ -74,10 +74,10 @@ export async function getLibraryUsage() {
     0,
   );
   return {
-    gifCount: gifs.length,
-    gifBytes,
+    itemCount: media.length,
+    mediaBytes,
     thumbnailBytes,
-    totalBytes: gifBytes + thumbnailBytes,
+    totalBytes: mediaBytes + thumbnailBytes,
     groups: [...groups.values()].sort(
       (a, b) => b.totalBytes - a.totalBytes || a.group.localeCompare(b.group),
     ),
@@ -153,7 +153,7 @@ export async function removeGroup(groupName, fallbackGroup = DEFAULT_GROUP) {
   });
 }
 
-export async function getGifBlob(id) {
+export async function getMediaBlob(id) {
   const db = await openDb();
   const row = await request(
     db.transaction("blobs", "readonly").objectStore("blobs").get(id),
@@ -161,7 +161,7 @@ export async function getGifBlob(id) {
   return row?.blob || null;
 }
 
-export async function getGifThumbnail(id) {
+export async function getMediaThumbnail(id) {
   const db = await openDb();
   const row = await request(
     db.transaction("thumbnails", "readonly").objectStore("thumbnails").get(id),
@@ -169,7 +169,7 @@ export async function getGifThumbnail(id) {
   return row?.blob || null;
 }
 
-export async function saveGifThumbnail(id, blob) {
+export async function saveMediaThumbnail(id, blob) {
   const db = await openDb();
   await transaction(db, ["thumbnails"], "readwrite", (stores) => {
     stores.thumbnails.put({ id, blob });
@@ -177,7 +177,7 @@ export async function saveGifThumbnail(id, blob) {
   return blob;
 }
 
-export async function saveGif(record, blob, thumbnailBlob = null) {
+export async function saveMedia(record, blob, thumbnailBlob = null) {
   const db = await openDb();
   await transaction(
     db,
@@ -196,11 +196,11 @@ export async function saveGif(record, blob, thumbnailBlob = null) {
   return record;
 }
 
-export async function updateGif(id, patch) {
+export async function updateMedia(id, patch) {
   const db = await openDb();
   return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
     const current = await request(stores.gifs.get(id));
-    if (!current) throw new Error("GIF not found");
+    if (!current) throw new Error("Media item not found");
     const next = { ...current, ...patch, updatedAt: Date.now() };
     stores.gifs.put(next);
 
@@ -218,7 +218,7 @@ export async function updateGif(id, patch) {
   });
 }
 
-export async function touchGif(id) {
+export async function touchMedia(id) {
   const db = await openDb();
   return transaction(db, ["gifs"], "readwrite", async (stores) => {
     const current = await request(stores.gifs.get(id));
@@ -235,7 +235,7 @@ export async function touchGif(id) {
   });
 }
 
-export async function deleteGif(id) {
+export async function deleteMedia(id) {
   const db = await openDb();
   await transaction(
     db,
@@ -302,6 +302,8 @@ function openDb() {
       const db = open.result;
 
       if (!db.objectStoreNames.contains("gifs")) {
+        // Keep the original store name so existing GIF libraries migrate
+        // without copying large blobs. Records in it are now media-agnostic.
         const gifs = db.createObjectStore("gifs", { keyPath: "id" });
         gifs.createIndex("group", "group", { unique: false });
         gifs.createIndex("favorite", "favorite", { unique: false });

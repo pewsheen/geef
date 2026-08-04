@@ -8,7 +8,7 @@ import {
   pruneEmptyGroups,
 } from "../src/group-utils.ts";
 
-test("removes groups that no longer have GIFs", () => {
+test("removes groups that no longer have media", () => {
   const groups = ["Team", "Work", "Reactions"];
   const gifs = [{ group: "Work" }, { group: "Reactions" }];
 
@@ -33,7 +33,7 @@ test("keeps reserved labels out of a pruned group list", () => {
   );
 });
 
-test("main add control offers GIF, MP4, and WebM imports", async () => {
+test("main add control offers mixed image and video imports", async () => {
   const [html, script] = await Promise.all([
     readFile(new URL("../src/sidepanel.html", import.meta.url), "utf8"),
     readFile(new URL("../src/sidepanel.ts", import.meta.url), "utf8"),
@@ -41,9 +41,16 @@ test("main add control offers GIF, MP4, and WebM imports", async () => {
 
   assert.match(
     html,
-    /accept="image\/gif,video\/mp4,video\/webm,\.gif,\.mp4,\.webm"/,
+    /accept="image\/gif,image\/png,image\/jpeg,image\/webp,video\/mp4,video\/webm,\.gif,\.png,\.jpg,\.jpeg,\.webp,\.mp4,\.webm"/,
   );
   assert.match(script, /isVideoFile/);
+  assert.match(html, /media-import-group/);
+  assert.match(html, /media-import-convert-videos/);
+  assert.doesNotMatch(html, /id="mediaImportConvertVideos"[^>]*checked/);
+  assert.match(
+    script,
+    /mediaFiles\.length > 1 \|\| mediaFiles\.some\(isVideoFile\)/,
+  );
   assert.doesNotMatch(script, /function isGroupArchiveFile/);
 });
 
@@ -59,7 +66,7 @@ test("library scrolling suppresses hover playback and scroll anchoring", async (
   );
   assert.match(
     script,
-    /function playGridGif\(id, image\) \{\s+if \(libraryIsScrolling\) return;/,
+    /function playGridMedia\(id, visual, record\) \{\s+if \(libraryIsScrolling\) return;/,
   );
   assert.match(css, /\.section-list \{[^}]*overflow-anchor: none;/s);
 });
