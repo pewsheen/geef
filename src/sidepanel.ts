@@ -15,6 +15,7 @@ import {
   renameGroup,
   requestPersistentStorage,
   saveMedia,
+  saveMediaChecksum,
   saveMediaThumbnail,
   saveGroups,
   saveSetting,
@@ -31,6 +32,11 @@ import {
   mediaMimeType,
 } from "./media-utils.ts";
 import { detectMediaMimeType } from "./media-signature.ts";
+import {
+  createMediaChecksum,
+  mediaChecksumKey,
+  normalizeMediaChecksum,
+} from "./media-checksum.ts";
 import {
   matchesSiteAccessTarget,
   sitePermissionPattern,
@@ -645,34 +651,40 @@ async function performMediaImport(importRequest, options) {
   const { files, skippedCount = 0 } = importRequest;
   let imported = 0;
   let converted = 0;
+  let duplicateCount = 0;
 
   if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
+    const knownChecksums = await ensureLibraryChecksums();
     for (const file of files) {
+      let result;
       if (isVideoFile(file) && options.convertVideos) {
         setProgress(0);
         const gifBlob = await convertVideoToGif(file, {}, setProgress);
-        await saveImportedMedia(
+        result = await saveImportedMedia(
           gifBlob,
           `${stripExtension(file.name)}.gif`,
           options.group,
           "image/gif",
+          knownChecksums,
         );
-        converted += 1;
+        if (result.saved) converted += 1;
         setProgress(null);
       } else {
-        await saveImportedMedia(
+        result = await saveImportedMedia(
           file,
           file.name,
           options.group,
           mediaMimeType(file),
+          knownChecksums,
         );
       }
-      imported += 1;
+      if (result.saved) imported += 1;
+      else duplicateCount += 1;
     }
 
-    state.activeGroup = options.group;
+    if (imported) state.activeGroup = options.group;
     await refresh();
     const details = [];
     if (converted)
@@ -683,8 +695,12 @@ async function performMediaImport(importRequest, options) {
       details.push(
         `skipped ${skippedCount} unsupported file${skippedCount === 1 ? "" : "s"}`,
       );
+    if (duplicateCount)
+      details.push(
+        `skipped ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}`,
+      );
     setStatus(
-      `Imported ${itemCountText(imported)} to "${options.group}"${details.length ? ` (${details.join(", ")})` : ""}.`,
+      `${imported ? "Imported" : "No new media imported:"} ${itemCountText(imported)}${imported ? ` to "${options.group}"` : ""}${details.length ? ` (${details.join(", ")})` : ""}.`,
     );
   } catch (error) {
     if (!(await showStorageCapacityHelp(error))) {
@@ -697,11 +713,20 @@ async function performMediaImport(importRequest, options) {
   }
 }
 
-async function saveImportedMedia(blob, filename, group, mimeType) {
+async function saveImportedMedia(
+  blob,
+  filename,
+  group,
+  mimeType,
+  knownChecksums,
+) {
   const normalizedMimeType =
     mediaMimeType({ name: filename, type: mimeType || blob.type }) || blob.type;
   const normalizedFilename = ensureMediaFilename(filename, normalizedMimeType);
   const mediaBlob = blob.slice(0, blob.size, normalizedMimeType);
+  const checksum = await createMediaChecksum(mediaBlob);
+  const checksumKey = mediaChecksumKey(checksum);
+  if (knownChecksums?.has(checksumKey)) return { saved: false, checksum };
   const dimensions = await readMediaSize(mediaBlob).catch(() => ({
     width: 0,
     height: 0,
@@ -722,19 +747,23 @@ async function saveImportedMedia(blob, filename, group, mimeType) {
     size: blob.size,
     width: dimensions.width,
     height: dimensions.height,
+    checksum,
   };
 
   if (PREVIEW_MODE) {
     state.previewBlobs.set(record.id, mediaBlob);
     state.gifs = [record, ...state.gifs];
     state.groups = normalizeGroupList([...state.groups, record.group]);
-    return;
+    knownChecksums?.add(checksumKey);
+    return { saved: true, record };
   }
   const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob).catch(
     () => null,
   );
   await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
   await saveMedia(record, mediaBlob, thumbnailBlob);
+  knownChecksums?.add(checksumKey);
+  return { saved: true, record };
 }
 
 async function openPreview(id) {
@@ -1556,6 +1585,7 @@ async function exportEditableGroup(group) {
 
   setBusy(true);
   try {
+    await ensureLibraryChecksums();
     const usedPaths = new Set();
     const mediaEntries = [];
     const metadata = {
@@ -1593,6 +1623,7 @@ async function exportEditableGroup(group) {
         size: blob.size,
         width: gif.width || 0,
         height: gif.height || 0,
+        checksum: normalizeMediaChecksum(gif.checksum),
         path,
       });
       mediaEntries.push({
@@ -1635,6 +1666,7 @@ async function exportAllMedia() {
 
   setBusy(true);
   try {
+    await ensureLibraryChecksums();
     const usedPaths = new Set();
     const mediaEntries = [];
     const metadata = {
@@ -1672,6 +1704,7 @@ async function exportAllMedia() {
         size: blob.size,
         width: gif.width || 0,
         height: gif.height || 0,
+        checksum: normalizeMediaChecksum(gif.checksum),
         path,
       });
       mediaEntries.push({
@@ -1788,18 +1821,27 @@ async function confirmImportArchive() {
   if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
+    const knownChecksums = await ensureLibraryChecksums();
     const imported = [];
     for (const selection of selections) {
       imported.push(
-        await importGroupArchive(archive, { ...selection, includeFavorites }),
+        await importGroupArchive(archive, {
+          ...selection,
+          includeFavorites,
+          knownChecksums,
+        }),
       );
     }
     state.activeGroup = ALL_GROUPS;
     await refresh();
     renderSettingsEditor();
     const count = imported.reduce((total, result) => total + result.count, 0);
+    const duplicateCount = imported.reduce(
+      (total, result) => total + result.duplicateCount,
+      0,
+    );
     setStatus(
-      `Imported ${itemCountText(count)} from ${imported.length} group${imported.length === 1 ? "" : "s"}.`,
+      `${count ? "Imported" : "No new media imported:"} ${itemCountText(count)} from ${imported.length} group${imported.length === 1 ? "" : "s"}${duplicateCount ? ` (skipped ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"})` : ""}.`,
     );
   } catch (error) {
     if (!(await showStorageCapacityHelp(error))) {
@@ -1853,6 +1895,8 @@ async function importGroupArchive(archive, options = {}) {
     importGroupName(metadata.groupName || stripExtension(file.name));
   const importedGroups = new Set();
   let importedCount = 0;
+  let duplicateCount = 0;
+  let readableCount = 0;
 
   for (const item of media) {
     const path = cleanZipLookupName(
@@ -1862,6 +1906,7 @@ async function importGroupArchive(archive, options = {}) {
     );
     const entryBlob = await readArchiveMediaBlob(archive, path, item);
     if (!entryBlob) continue;
+    readableCount += 1;
 
     archive.importedBytes += entryBlob.size;
     if (archive.importedBytes > MAX_ZIP_TOTAL_BYTES) {
@@ -1876,6 +1921,12 @@ async function importGroupArchive(archive, options = {}) {
       mimeType,
     );
     const mediaBlob = entryBlob.slice(0, entryBlob.size, mimeType);
+    const checksum = await createMediaChecksum(mediaBlob);
+    const checksumKey = mediaChecksumKey(checksum);
+    if (options.knownChecksums?.has(checksumKey)) {
+      duplicateCount += 1;
+      continue;
+    }
     const dimensions = importDimensions(item);
     const measuredDimensions =
       dimensions ||
@@ -1902,6 +1953,7 @@ async function importGroupArchive(archive, options = {}) {
       size: mediaBlob.size,
       width: measuredDimensions.width,
       height: measuredDimensions.height,
+      checksum,
     };
 
     if (PREVIEW_MODE) {
@@ -1914,19 +1966,22 @@ async function importGroupArchive(archive, options = {}) {
       await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
       await saveMedia(record, mediaBlob, thumbnailBlob);
     }
+    options.knownChecksums?.add(checksumKey);
     importedGroups.add(recordGroup);
     importedCount += 1;
   }
 
-  if (!importedCount)
+  if (!readableCount)
     throw new Error("No media files from metadata could be found.");
 
-  state.activeGroup = isLibraryBackup ? ALL_GROUPS : groupName;
+  if (importedCount)
+    state.activeGroup = isLibraryBackup ? ALL_GROUPS : groupName;
   if (PREVIEW_MODE)
     state.groups = normalizeGroupList([...state.groups, ...importedGroups]);
   return {
     groupName: isLibraryBackup ? "library backup" : groupName,
     count: importedCount,
+    duplicateCount,
   };
 }
 
@@ -1966,6 +2021,24 @@ function isReservedGroupLabel(group) {
 
 async function loadGifBlob(id) {
   return PREVIEW_MODE ? state.previewBlobs.get(id) || null : getMediaBlob(id);
+}
+
+async function ensureLibraryChecksums() {
+  const knownChecksums = new Set();
+
+  for (const record of state.gifs) {
+    let checksum = normalizeMediaChecksum(record.checksum);
+    if (!checksum) {
+      const blob = await loadGifBlob(record.id);
+      if (!blob) continue;
+      checksum = await createMediaChecksum(blob);
+      record.checksum = checksum;
+      if (!PREVIEW_MODE) await saveMediaChecksum(record.id, checksum);
+    }
+    knownChecksums.add(mediaChecksumKey(checksum));
+  }
+
+  return knownChecksums;
 }
 
 async function loadGifThumbnail(id) {

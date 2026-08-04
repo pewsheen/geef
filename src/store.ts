@@ -5,7 +5,7 @@ import {
 } from "./group-utils.ts";
 
 const DB_NAME = "geef";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const DEFAULT_GROUP = "General";
 const GROUPS_KEY = "groups";
 
@@ -196,6 +196,17 @@ export async function saveMedia(record, blob, thumbnailBlob = null) {
   return record;
 }
 
+export async function saveMediaChecksum(id, checksum) {
+  const db = await openDb();
+  return transaction(db, ["gifs"], "readwrite", async (stores) => {
+    const current = await request(stores.gifs.get(id));
+    if (!current) return null;
+    const next = { ...current, checksum };
+    stores.gifs.put(next);
+    return next;
+  });
+}
+
 export async function updateMedia(id, patch) {
   const db = await openDb();
   return transaction(db, ["gifs", "settings"], "readwrite", async (stores) => {
@@ -301,14 +312,20 @@ function openDb() {
     open.onupgradeneeded = () => {
       const db = open.result;
 
+      let gifs;
       if (!db.objectStoreNames.contains("gifs")) {
         // Keep the original store name so existing GIF libraries migrate
         // without copying large blobs. Records in it are now media-agnostic.
-        const gifs = db.createObjectStore("gifs", { keyPath: "id" });
+        gifs = db.createObjectStore("gifs", { keyPath: "id" });
         gifs.createIndex("group", "group", { unique: false });
         gifs.createIndex("favorite", "favorite", { unique: false });
         gifs.createIndex("lastUsedAt", "lastUsedAt", { unique: false });
+      } else {
+        gifs = open.transaction.objectStore("gifs");
       }
+
+      if (!gifs.indexNames.contains("checksum"))
+        gifs.createIndex("checksum", "checksum.digest", { unique: false });
 
       if (!db.objectStoreNames.contains("blobs")) {
         db.createObjectStore("blobs", { keyPath: "id" });

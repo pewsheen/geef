@@ -17,6 +17,7 @@ analytics, ads, developer-operated backend, or remotely hosted code.
 - Keep MP4 and WebM clips in their efficient original format or optionally
   convert them to animated GIFs for messenger autoplay compatibility.
 - Search the library and organize mixed media into groups and favorites.
+- Deduplicate added and restored media by a locally calculated SHA-256 checksum.
 - Keep recently used media easy to reach, with an option to hide the Recently
   section.
 - Rename, regroup, favorite, preview, paste, and remove individual items.
