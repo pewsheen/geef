@@ -199,13 +199,25 @@
             aria-label="Settings sections"
           >
             <button
+              id="generalTab"
+              data-settings-tab="general"
+              data-ui="general-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="generalPanel"
+            >
+              General
+            </button>
+            <button
               id="appearanceTab"
               data-settings-tab="appearance"
               data-ui="appearance-tab"
               type="button"
               role="tab"
-              aria-selected="true"
+              aria-selected="false"
               aria-controls="appearancePanel"
+              tabindex="-1"
             >
               Appearance
             </button>
@@ -249,11 +261,36 @@
         </div>
 
         <section
+          id="generalPanel"
+          class="settings-panel general-panel"
+          data-ui="general-settings-panel"
+          role="tabpanel"
+          aria-labelledby="generalTab"
+        >
+          <label
+            class="setting-checkbox"
+            data-ui="default-convert-videos-field"
+          >
+            <input
+              id="defaultConvertVideosInput"
+              data-ui="default-convert-videos-input"
+              type="checkbox"
+            />
+            <span>Convert videos to GIF by default</span>
+          </label>
+          <p class="setting-note" data-ui="default-convert-videos-note">
+            Preselects GIF conversion when importing MP4 or WebM files. You can
+            still change it for each import.
+          </p>
+        </section>
+
+        <section
           id="appearancePanel"
           class="settings-panel appearance-panel"
           data-ui="appearance-settings-panel"
           role="tabpanel"
           aria-labelledby="appearanceTab"
+          hidden
         >
           <label class="setting-field" data-ui="grid-cell-width-field">
             <span data-ui="grid-cell-width-label">Minimum cell width</span>
@@ -553,6 +590,52 @@
             type="button"
           >
             Import
+          </button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog
+      id="sourceDuplicateDialog"
+      class="preview-dialog source-duplicate-dialog"
+      data-ui="source-duplicate-dialog"
+    >
+      <form data-ui="source-duplicate-form">
+        <header>
+          <strong>Video already exists</strong>
+        </header>
+        <p
+          id="sourceDuplicateSummary"
+          class="dialog-summary"
+          data-ui="source-duplicate-summary"
+        ></p>
+        <p class="source-duplicate-detail" data-ui="source-duplicate-detail">
+          Overwrite replaces that item’s media while keeping its name, group,
+          favorite, and usage history. Add copy keeps both formats.
+        </p>
+        <menu class="source-duplicate-actions">
+          <button
+            id="sourceDuplicateCancelButton"
+            data-ui="source-duplicate-cancel-button"
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            id="sourceDuplicateOverwriteButton"
+            class="danger-button"
+            data-ui="source-duplicate-overwrite-button"
+            type="button"
+          >
+            Overwrite
+          </button>
+          <button
+            id="sourceDuplicateAddButton"
+            class="primary-button"
+            data-ui="source-duplicate-add-button"
+            type="button"
+          >
+            Add copy
           </button>
         </menu>
       </form>

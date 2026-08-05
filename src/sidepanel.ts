@@ -35,9 +35,14 @@ import {
 } from "./media-utils.ts";
 import { detectMediaMimeType } from "./media-signature.ts";
 import {
+  createMediaChecksumIndex,
   createMediaChecksum,
-  mediaChecksumKey,
+  findExactMediaChecksum,
+  findSourceMediaChecksum,
+  indexMediaChecksumRecord,
+  mediaChecksumImportDecision,
   normalizeMediaChecksum,
+  removeMediaChecksumRecord,
 } from "./media-checksum.ts";
 import {
   matchesSiteAccessTarget,
@@ -64,6 +69,7 @@ const MAX_ZIP_TOTAL_BYTES = 500 * 1024 ** 2;
 const DEFAULT_GRID_CELL_MIN = "110px";
 const GRID_CELL_MIN_SETTING = "gridCellMin";
 const SHOW_RECENTLY_SETTING = "showRecently";
+const DEFAULT_CONVERT_VIDEOS_SETTING = "defaultConvertVideos";
 const RESERVED_GROUP_LABELS = new Set(["all", "favorites"]);
 const PREVIEW_MODE = new URLSearchParams(location.search).has("preview");
 const NEW_GROUP_VALUE = "__new_group__";
@@ -78,6 +84,7 @@ let libraryIsScrolling = false;
 const gridGifIndex = new Map();
 let pendingImportArchive = null;
 let pendingMediaImport = null;
+let pendingSourceDuplicateDecision = null;
 
 const state = {
   gifs: [],
@@ -85,8 +92,9 @@ const state = {
   search: "",
   gridCellMin: null,
   showRecently: true,
+  defaultConvertVideos: false,
   groups: [],
-  settingsTab: "appearance",
+  settingsTab: "general",
   previewId: null,
   selectionMode: false,
   selectedIds: new Set(),
@@ -120,6 +128,9 @@ const el = {
   gridCellMinInput: document.querySelector("#gridCellMinInput"),
   gridCellMinApplyButton: document.querySelector("#gridCellMinApplyButton"),
   showRecentlyInput: document.querySelector("#showRecentlyInput"),
+  defaultConvertVideosInput: document.querySelector(
+    "#defaultConvertVideosInput",
+  ),
   siteAccessMessage: document.querySelector("#siteAccessMessage"),
   siteAccessWarning: document.querySelector("#siteAccessWarning"),
   gridCellPreviewTile: document.querySelector("#gridCellPreviewTile"),
@@ -158,6 +169,7 @@ const el = {
   settingsTabButtons: [...document.querySelectorAll("[data-settings-tab]")],
   settingsTabsWrap: document.querySelector(".settings-tabs-wrap"),
   appearancePanel: document.querySelector("#appearancePanel"),
+  generalPanel: document.querySelector("#generalPanel"),
   statusText: document.querySelector("#statusText"),
   storageInfo: document.querySelector("#storageInfo"),
   importDialog: document.querySelector("#importDialog"),
@@ -173,6 +185,15 @@ const el = {
   mediaImportConvertField: document.querySelector("#mediaImportConvertField"),
   mediaImportConvertVideos: document.querySelector("#mediaImportConvertVideos"),
   mediaImportConfirmButton: document.querySelector("#mediaImportConfirmButton"),
+  sourceDuplicateDialog: document.querySelector("#sourceDuplicateDialog"),
+  sourceDuplicateSummary: document.querySelector("#sourceDuplicateSummary"),
+  sourceDuplicateCancelButton: document.querySelector(
+    "#sourceDuplicateCancelButton",
+  ),
+  sourceDuplicateOverwriteButton: document.querySelector(
+    "#sourceDuplicateOverwriteButton",
+  ),
+  sourceDuplicateAddButton: document.querySelector("#sourceDuplicateAddButton"),
 };
 
 wireEvents();
@@ -209,6 +230,23 @@ function wireEvents() {
   el.gridCellMinInput.addEventListener("input", updateGridCellPreview);
   el.gridCellMinApplyButton.addEventListener("click", saveGridCellMin);
   el.showRecentlyInput.addEventListener("change", saveShowRecently);
+  el.defaultConvertVideosInput.addEventListener(
+    "change",
+    saveDefaultConvertVideos,
+  );
+  el.sourceDuplicateCancelButton.addEventListener("click", () =>
+    finishSourceDuplicateDecision("cancel"),
+  );
+  el.sourceDuplicateOverwriteButton.addEventListener("click", () =>
+    finishSourceDuplicateDecision("overwrite"),
+  );
+  el.sourceDuplicateAddButton.addEventListener("click", () =>
+    finishSourceDuplicateDecision("add"),
+  );
+  el.sourceDuplicateDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    finishSourceDuplicateDecision("cancel");
+  });
   el.selectMediaButton.addEventListener("click", toggleSelectionMode);
   el.batchMoveButton.addEventListener("click", moveSelectedMedia);
   el.batchDeleteButton.addEventListener("click", deleteSelectedMedia);
@@ -308,6 +346,8 @@ async function refresh() {
       await getSetting(GRID_CELL_MIN_SETTING),
     );
     state.showRecently = (await getSetting(SHOW_RECENTLY_SETTING)) !== false;
+    state.defaultConvertVideos =
+      (await getSetting(DEFAULT_CONVERT_VIDEOS_SETTING)) === true;
   }
 
   applyGridCellMin();
@@ -713,6 +753,7 @@ async function importMediaFiles(files) {
   const importRequest = {
     files: mediaFiles,
     skippedCount: selectedFiles.length - mediaFiles.length,
+    defaultGroup: currentImportGroup(),
   };
   if (mediaFiles.length > 1 || mediaFiles.some(isVideoFile)) {
     pendingMediaImport = importRequest;
@@ -722,7 +763,7 @@ async function importMediaFiles(files) {
   }
 
   await performMediaImport(importRequest, {
-    group: currentImportGroup(),
+    group: importRequest.defaultGroup,
     convertVideos: false,
   });
 }
@@ -730,7 +771,7 @@ async function importMediaFiles(files) {
 function renderMediaImportDialog(importRequest) {
   const { files } = importRequest;
   const videoCount = files.filter(isVideoFile).length;
-  const currentGroup = currentImportGroup();
+  const currentGroup = contentGroupName(importRequest.defaultGroup);
   const groups = normalizeGroupList([currentGroup, ...editableGroups()]);
 
   el.mediaImportCount.textContent = `${itemCountText(files.length)} selected`;
@@ -750,7 +791,7 @@ function renderMediaImportDialog(importRequest) {
   );
   el.mediaImportGroup.value = currentGroup;
   el.mediaImportNewGroup.value = "";
-  el.mediaImportConvertVideos.checked = false;
+  el.mediaImportConvertVideos.checked = state.defaultConvertVideos;
   el.mediaImportConvertField.hidden = videoCount === 0;
   syncMediaImportGroupField();
 }
@@ -798,37 +839,97 @@ function clearPendingMediaImport() {
 async function performMediaImport(importRequest, options) {
   const { files, skippedCount = 0 } = importRequest;
   let imported = 0;
+  let overwritten = 0;
   let converted = 0;
   let duplicateCount = 0;
+  let cancelledCount = 0;
 
   if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
-    const knownChecksums = await ensureLibraryChecksums();
+    const checksumIndex = await ensureLibraryChecksums();
     for (const file of files) {
       let result;
-      if (isVideoFile(file) && options.convertVideos) {
-        setProgress(0);
-        const gifBlob = await convertVideoToGif(file, {}, setProgress);
-        result = await saveImportedMedia(
-          gifBlob,
-          `${stripExtension(file.name)}.gif`,
-          options.group,
-          "image/gif",
-          knownChecksums,
-        );
-        if (result.saved) converted += 1;
-        setProgress(null);
-      } else {
-        result = await saveImportedMedia(
+      const converting = isVideoFile(file) && options.convertVideos;
+      const sourceMimeType = mediaMimeType(file) || file.type;
+      const sourceBlob = file.slice(0, file.size, sourceMimeType);
+      const sourceChecksum = await createMediaChecksum(sourceBlob);
+      const importDecision = mediaChecksumImportDecision(
+        checksumIndex,
+        sourceChecksum,
+        { converting },
+      );
+      const prompted = importDecision.action === "prompt";
+      let duplicateAction = importDecision.action;
+      if (prompted) {
+        duplicateAction = await requestSourceDuplicateDecision(
           file,
-          file.name,
-          options.group,
-          mediaMimeType(file),
-          knownChecksums,
+          importDecision.record,
+          { converting },
         );
       }
-      if (result.saved) imported += 1;
+      if (duplicateAction === "cancel") {
+        cancelledCount += 1;
+        continue;
+      }
+
+      if (duplicateAction === "skip") {
+        result = {
+          duplicate: true,
+          duplicateRecord: importDecision.record,
+          checksum: sourceChecksum,
+        };
+      } else if (converting) {
+        setProgress(0);
+        const gifBlob = await convertVideoToGif(file, {}, setProgress);
+        const convertedFilename = `${stripExtension(file.name)}.gif`;
+        result =
+          duplicateAction === "overwrite"
+            ? await overwriteImportedMedia(
+                importDecision.record,
+                gifBlob,
+                convertedFilename,
+                "image/gif",
+                sourceChecksum,
+                checksumIndex,
+              )
+            : await saveImportedMedia(
+                gifBlob,
+                convertedFilename,
+                options.group,
+                "image/gif",
+                checksumIndex,
+                {
+                  sourceChecksum,
+                  explicitAdd: prompted && duplicateAction === "add",
+                },
+              );
+        if (result.created || result.overwritten) converted += 1;
+        setProgress(null);
+      } else if (duplicateAction === "overwrite") {
+        result = await overwriteImportedMedia(
+          importDecision.record,
+          sourceBlob,
+          file.name,
+          sourceMimeType,
+          null,
+          checksumIndex,
+        );
+      } else {
+        result = await saveImportedMedia(
+          sourceBlob,
+          file.name,
+          options.group,
+          sourceMimeType,
+          checksumIndex,
+          {
+            checksum: sourceChecksum,
+            explicitAdd: prompted && duplicateAction === "add",
+          },
+        );
+      }
+      if (result.created) imported += 1;
+      else if (result.overwritten) overwritten += 1;
       else duplicateCount += 1;
     }
 
@@ -839,6 +940,10 @@ async function performMediaImport(importRequest, options) {
       details.push(
         `converted ${converted} video${converted === 1 ? "" : "s"} to GIF`,
       );
+    if (imported && overwritten)
+      details.push(
+        `overwrote ${overwritten} existing item${overwritten === 1 ? "" : "s"}`,
+      );
     if (skippedCount)
       details.push(
         `skipped ${skippedCount} unsupported file${skippedCount === 1 ? "" : "s"}`,
@@ -847,9 +952,16 @@ async function performMediaImport(importRequest, options) {
       details.push(
         `skipped ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}`,
       );
-    setStatus(
-      `${imported ? "Imported" : "No new media imported:"} ${itemCountText(imported)}${imported ? ` to "${options.group}"` : ""}${details.length ? ` (${details.join(", ")})` : ""}.`,
-    );
+    if (cancelledCount)
+      details.push(
+        `cancelled ${cancelledCount} duplicate${cancelledCount === 1 ? "" : "s"}`,
+      );
+    const summary = imported
+      ? `Imported ${itemCountText(imported)} to "${options.group}"`
+      : overwritten
+        ? `Updated ${itemCountText(overwritten)}`
+        : "No new media imported";
+    setStatus(`${summary}${details.length ? ` (${details.join(", ")})` : ""}.`);
   } catch (error) {
     if (!(await showStorageCapacityHelp(error))) {
       setStatus(`Import failed: ${error.message}`);
@@ -866,15 +978,29 @@ async function saveImportedMedia(
   filename,
   group,
   mimeType,
-  knownChecksums,
+  checksumIndex,
+  importOptions = {},
 ) {
   const normalizedMimeType =
     mediaMimeType({ name: filename, type: mimeType || blob.type }) || blob.type;
   const normalizedFilename = ensureMediaFilename(filename, normalizedMimeType);
   const mediaBlob = blob.slice(0, blob.size, normalizedMimeType);
-  const checksum = await createMediaChecksum(mediaBlob);
-  const checksumKey = mediaChecksumKey(checksum);
-  if (knownChecksums?.has(checksumKey)) return { saved: false, checksum };
+  const checksum =
+    normalizeMediaChecksum(importOptions.checksum) ||
+    (await createMediaChecksum(mediaBlob));
+  const importDecision = mediaChecksumImportDecision(checksumIndex, checksum, {
+    explicitAdd: importOptions.explicitAdd,
+  });
+  if (importDecision.action !== "add") {
+    return {
+      duplicate: true,
+      duplicateRecord: importDecision.record,
+      checksum,
+    };
+  }
+  const normalizedSourceChecksum = normalizeMediaChecksum(
+    importOptions.sourceChecksum,
+  );
   const dimensions = await readMediaSize(mediaBlob).catch(() => ({
     width: 0,
     height: 0,
@@ -896,22 +1022,114 @@ async function saveImportedMedia(
     width: dimensions.width,
     height: dimensions.height,
     checksum,
+    ...(normalizedSourceChecksum
+      ? { sourceChecksum: normalizedSourceChecksum }
+      : {}),
   };
 
   if (PREVIEW_MODE) {
     state.previewBlobs.set(record.id, mediaBlob);
     state.gifs = [record, ...state.gifs];
     state.groups = normalizeGroupList([...state.groups, record.group]);
-    knownChecksums?.add(checksumKey);
-    return { saved: true, record };
+    indexMediaChecksumRecord(checksumIndex, record);
+    return { created: true, record };
   }
   const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob).catch(
     () => null,
   );
   await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
   await saveMedia(record, mediaBlob, thumbnailBlob);
-  knownChecksums?.add(checksumKey);
-  return { saved: true, record };
+  indexMediaChecksumRecord(checksumIndex, record);
+  return { created: true, record };
+}
+
+async function overwriteImportedMedia(
+  current,
+  blob,
+  filename,
+  mimeType,
+  sourceChecksum,
+  checksumIndex,
+) {
+  const normalizedMimeType =
+    mediaMimeType({ name: filename, type: mimeType || blob.type }) || blob.type;
+  const normalizedFilename = ensureMediaFilename(filename, normalizedMimeType);
+  const mediaBlob = blob.slice(0, blob.size, normalizedMimeType);
+  const checksum = await createMediaChecksum(mediaBlob);
+  const duplicateRecord = findExactMediaChecksum(checksumIndex, checksum, {
+    excludeId: current.id,
+  });
+  if (duplicateRecord) return { duplicate: true, duplicateRecord, checksum };
+
+  const dimensions = await readMediaSize(mediaBlob).catch(() => ({
+    width: 0,
+    height: 0,
+  }));
+  const next = {
+    ...current,
+    filename: normalizedFilename,
+    mimeType: normalizedMimeType,
+    kind: mediaKind({ name: normalizedFilename, type: normalizedMimeType }),
+    updatedAt: Date.now(),
+    size: mediaBlob.size,
+    width: dimensions.width,
+    height: dimensions.height,
+    checksum,
+  };
+  const normalizedSourceChecksum = normalizeMediaChecksum(sourceChecksum);
+  if (normalizedSourceChecksum) {
+    next.sourceChecksum = normalizedSourceChecksum;
+  } else {
+    delete next.sourceChecksum;
+  }
+
+  revokeObjectUrl(current.id);
+  if (PREVIEW_MODE) {
+    state.previewBlobs.set(current.id, mediaBlob);
+    state.gifs = state.gifs.map((record) =>
+      record.id === current.id ? next : record,
+    );
+  } else {
+    const thumbnailBlob = await createMediaThumbnailBlob(mediaBlob).catch(
+      () => mediaBlob,
+    );
+    const additionalBytes = Math.max(
+      0,
+      mediaBlob.size + thumbnailBlob.size - Number(current.size || 0),
+    );
+    await ensureStorageCapacity(additionalBytes);
+    await saveMedia(next, mediaBlob, thumbnailBlob);
+  }
+
+  removeMediaChecksumRecord(checksumIndex, current);
+  indexMediaChecksumRecord(checksumIndex, next);
+  return { overwritten: true, record: next };
+}
+
+function requestSourceDuplicateDecision(file, match, options = {}) {
+  if (pendingSourceDuplicateDecision)
+    throw new Error("Another duplicate decision is already open.");
+
+  const matchName = match.title || match.filename || "an existing item";
+  el.sourceDuplicateSummary.textContent = options.converting
+    ? `“${file.name}” matches “${matchName}” before conversion.`
+    : `“${file.name}” matches the original source for “${matchName}”.`;
+  el.sourceDuplicateCancelButton.disabled = false;
+  el.sourceDuplicateOverwriteButton.disabled = false;
+  el.sourceDuplicateAddButton.disabled = false;
+  const decision = new Promise((resolve) => {
+    pendingSourceDuplicateDecision = resolve;
+  });
+  el.sourceDuplicateDialog.showModal();
+  return decision;
+}
+
+function finishSourceDuplicateDecision(action) {
+  if (!pendingSourceDuplicateDecision) return;
+  const resolve = pendingSourceDuplicateDecision;
+  pendingSourceDuplicateDecision = null;
+  if (el.sourceDuplicateDialog.open) el.sourceDuplicateDialog.close();
+  resolve(action);
 }
 
 async function openPreview(id) {
@@ -1188,21 +1406,25 @@ function positionInspectLabel(label, element) {
   label.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
 
-function openSettingsDialog(initialTab = "appearance") {
+function openSettingsDialog(initialTab = "general") {
   renderSettingsEditor();
   el.groupAddInput.value = "";
   el.gridCellMinInput.value = state.gridCellMin || "";
   el.showRecentlyInput.checked = state.showRecently;
+  el.defaultConvertVideosInput.checked = state.defaultConvertVideos;
   updateGridCellPreview();
   setSettingsTab(initialTab);
   if (!el.settingsDialog.open) el.settingsDialog.showModal();
 }
 
 function setSettingsTab(tab) {
-  const nextTab = ["appearance", "group", "backup", "data"].includes(tab)
+  const nextTab = ["general", "appearance", "group", "backup", "data"].includes(
+    tab,
+  )
     ? tab
-    : "appearance";
+    : "general";
   state.settingsTab = nextTab;
+  el.generalPanel.hidden = nextTab !== "general";
   el.appearancePanel.hidden = nextTab !== "appearance";
   el.groupPanel.hidden = nextTab !== "group";
   el.backupPanel.hidden = nextTab !== "backup";
@@ -1535,6 +1757,21 @@ async function saveShowRecently() {
   );
 }
 
+async function saveDefaultConvertVideos() {
+  state.defaultConvertVideos = el.defaultConvertVideosInput.checked;
+  if (!PREVIEW_MODE) {
+    await saveSetting(
+      DEFAULT_CONVERT_VIDEOS_SETTING,
+      state.defaultConvertVideos,
+    );
+  }
+  setStatus(
+    state.defaultConvertVideos
+      ? "Video imports will default to GIF conversion."
+      : "Video imports will keep their original format by default.",
+  );
+}
+
 function normalizeGridCellMin(value) {
   const match = String(value || "")
     .trim()
@@ -1772,6 +2009,7 @@ async function exportEditableGroup(group) {
         width: gif.width || 0,
         height: gif.height || 0,
         checksum: normalizeMediaChecksum(gif.checksum),
+        sourceChecksum: normalizeMediaChecksum(gif.sourceChecksum),
         path,
       });
       mediaEntries.push({
@@ -1853,6 +2091,7 @@ async function exportAllMedia() {
         width: gif.width || 0,
         height: gif.height || 0,
         checksum: normalizeMediaChecksum(gif.checksum),
+        sourceChecksum: normalizeMediaChecksum(gif.sourceChecksum),
         path,
       });
       mediaEntries.push({
@@ -1969,14 +2208,14 @@ async function confirmImportArchive() {
   if (!PREVIEW_MODE) requestPersistentStorage().catch(() => false);
   setBusy(true);
   try {
-    const knownChecksums = await ensureLibraryChecksums();
+    const checksumIndex = await ensureLibraryChecksums();
     const imported = [];
     for (const selection of selections) {
       imported.push(
         await importGroupArchive(archive, {
           ...selection,
           includeFavorites,
-          knownChecksums,
+          checksumIndex,
         }),
       );
     }
@@ -2070,8 +2309,12 @@ async function importGroupArchive(archive, options = {}) {
     );
     const mediaBlob = entryBlob.slice(0, entryBlob.size, mimeType);
     const checksum = await createMediaChecksum(mediaBlob);
-    const checksumKey = mediaChecksumKey(checksum);
-    if (options.knownChecksums?.has(checksumKey)) {
+    const sourceChecksum = normalizeMediaChecksum(item.sourceChecksum);
+    if (
+      findSourceMediaChecksum(options.checksumIndex, checksum) ||
+      (sourceChecksum &&
+        findSourceMediaChecksum(options.checksumIndex, sourceChecksum))
+    ) {
       duplicateCount += 1;
       continue;
     }
@@ -2102,6 +2345,7 @@ async function importGroupArchive(archive, options = {}) {
       width: measuredDimensions.width,
       height: measuredDimensions.height,
       checksum,
+      ...(sourceChecksum ? { sourceChecksum } : {}),
     };
 
     if (PREVIEW_MODE) {
@@ -2114,7 +2358,7 @@ async function importGroupArchive(archive, options = {}) {
       await ensureStorageCapacity(mediaBlob.size + (thumbnailBlob?.size || 0));
       await saveMedia(record, mediaBlob, thumbnailBlob);
     }
-    options.knownChecksums?.add(checksumKey);
+    indexMediaChecksumRecord(options.checksumIndex, record);
     importedGroups.add(recordGroup);
     importedCount += 1;
   }
@@ -2172,8 +2416,6 @@ async function loadGifBlob(id) {
 }
 
 async function ensureLibraryChecksums() {
-  const knownChecksums = new Set();
-
   for (const record of state.gifs) {
     let checksum = normalizeMediaChecksum(record.checksum);
     if (!checksum) {
@@ -2183,10 +2425,9 @@ async function ensureLibraryChecksums() {
       record.checksum = checksum;
       if (!PREVIEW_MODE) await saveMediaChecksum(record.id, checksum);
     }
-    knownChecksums.add(mediaChecksumKey(checksum));
   }
 
-  return knownChecksums;
+  return createMediaChecksumIndex(state.gifs);
 }
 
 async function loadGifThumbnail(id) {
