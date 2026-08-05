@@ -11,11 +11,11 @@ analytics, ads, developer-operated backend, or remotely hosted code.
 ## Features
 
 - Open the media library from Chrome's extension toolbar in a side panel.
-- Import PNG, JPEG, WebP, GIF, MP4, and WebM files by picker or drag and drop.
+- Import pictures, animated media, and short videos by picker or drag and drop.
 - Choose a destination group when importing a batch, including a new group that
   acts as a sticker pack.
-- Keep MP4 and WebM clips in their efficient original format or optionally
-  convert them to animated GIFs for messenger autoplay compatibility.
+- Keep short video clips in their efficient original format or optionally
+  convert them to animated images for messenger autoplay compatibility.
 - Search the library and organize mixed media into groups and favorites.
 - Deduplicate added and restored media by a locally calculated SHA-256 checksum.
 - Keep recently used media easy to reach, with an option to hide the Recently
