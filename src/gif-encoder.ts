@@ -1,11 +1,28 @@
 const DEFAULT_OPTIONS = {
-  fps: 8,
+  fps: 15,
   maxSeconds: 6,
   maxWidth: 360,
   maxHeight: 280,
   paletteSize: 256,
   dither: true,
 };
+
+export const GIF_QUALITY_FPS = Object.freeze({ low: 8, medium: 15, high: 25 });
+
+export function normalizeGifQuality(quality) {
+  return Object.hasOwn(GIF_QUALITY_FPS, quality) ? quality : "medium";
+}
+
+export function gifOptionsForQuality(quality) {
+  return { fps: GIF_QUALITY_FPS[normalizeGifQuality(quality)] };
+}
+
+export function gifFrameDelayCentiseconds(fps, index) {
+  return Math.max(
+    2,
+    Math.round(((index + 1) * 100) / fps) - Math.round((index * 100) / fps),
+  );
+}
 
 const TRANSPARENT_ALPHA_THRESHOLD = 128;
 const TRANSPARENT_PALETTE_INDEX = 0;
@@ -60,7 +77,7 @@ export async function convertVideoToGif(
       const imageData = context.getImageData(0, 0, size.width, size.height);
       frames.push({
         rgba: new Uint8ClampedArray(imageData.data),
-        delay: Math.max(2, Math.round(100 / settings.fps)),
+        delay: gifFrameDelayCentiseconds(settings.fps, index),
       });
 
       onProgress(((index + 1) / frameCount) * 0.75);
@@ -75,6 +92,73 @@ export async function convertVideoToGif(
     );
     return new Blob([bytes], { type: "image/gif" });
   } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Encode a few frames from across the clip, then scale their compressed size
+// to the number of frames the full conversion will produce.
+export async function estimateVideoGifSize(file, options = {}) {
+  const settings = { ...DEFAULT_OPTIONS, ...options };
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = url;
+
+  try {
+    await waitFor(video, "loadedmetadata");
+    await waitFor(video, "loadeddata").catch(() => {});
+    if (!Number.isFinite(video.duration) || video.duration <= 0) {
+      throw new Error("Video duration could not be read.");
+    }
+
+    const size = fitSize(
+      video.videoWidth,
+      video.videoHeight,
+      settings.maxWidth,
+      settings.maxHeight,
+    );
+    const frameCount = Math.max(
+      1,
+      Math.ceil(Math.min(video.duration, settings.maxSeconds) * settings.fps),
+    );
+    const sampleCount = Math.min(3, frameCount);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const frames = [];
+    const lastTime = Math.min(
+      (frameCount - 1) / settings.fps,
+      Math.max(0, video.duration - 0.05),
+    );
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      const time =
+        sampleCount === 1 ? 0 : (lastTime * index) / (sampleCount - 1);
+      await seekVideo(video, time);
+      context.clearRect(0, 0, size.width, size.height);
+      context.drawImage(video, 0, 0, size.width, size.height);
+      frames.push({
+        rgba: new Uint8ClampedArray(
+          context.getImageData(0, 0, size.width, size.height).data,
+        ),
+        delay: gifFrameDelayCentiseconds(settings.fps, index),
+      });
+    }
+
+    const sampleBytes = encodeRgbaFramesToGif(
+      size.width,
+      size.height,
+      frames,
+      settings,
+    ).byteLength;
+    return Math.round((sampleBytes * frameCount) / sampleCount);
+  } finally {
+    video.removeAttribute("src");
+    video.load();
     URL.revokeObjectURL(url);
   }
 }

@@ -282,6 +282,21 @@
             Preselects GIF conversion when importing MP4 or WebM files. You can
             still change it for each import.
           </p>
+          <label class="setting-field" data-ui="default-gif-quality-field">
+            <span>Default GIF quality</span>
+            <select
+              id="defaultGifQualityInput"
+              data-ui="default-gif-quality-input"
+            >
+              <option value="low">Low · 8 FPS</option>
+              <option value="medium">Medium · 15 FPS</option>
+              <option value="high">High · 25 FPS</option>
+            </select>
+            <small
+              >Sets the starting quality for video imports. Higher quality uses
+              more storage.</small
+            >
+          </label>
         </section>
 
         <section
@@ -582,6 +597,25 @@
           />
           <span>Convert videos to GIF for messenger autoplay</span>
         </label>
+        <label
+          id="mediaImportQualityField"
+          data-ui="media-import-quality-field"
+          hidden
+        >
+          <span>GIF quality</span>
+          <select id="mediaImportQuality" data-ui="media-import-quality">
+            <option value="low">Low · 8 FPS</option>
+            <option value="medium">Medium · 15 FPS</option>
+            <option value="high">High · 25 FPS</option>
+          </select>
+        </label>
+        <p
+          id="mediaImportSizeEstimate"
+          class="media-import-estimate"
+          data-ui="media-import-size-estimate"
+          role="status"
+          hidden
+        ></p>
         <menu>
           <button value="cancel" type="submit">Cancel</button>
           <button

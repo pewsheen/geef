@@ -24,7 +24,12 @@ import {
   touchMedia,
   updateMedia,
 } from "./store.ts";
-import { convertVideoToGif } from "./gif-encoder.ts";
+import {
+  convertVideoToGif,
+  estimateVideoGifSize,
+  gifOptionsForQuality,
+  normalizeGifQuality,
+} from "./gif-encoder.ts";
 import { pruneEmptyGroups } from "./group-utils.ts";
 import {
   ensureMediaFilename,
@@ -70,6 +75,7 @@ const DEFAULT_GRID_CELL_MIN = "110px";
 const GRID_CELL_MIN_SETTING = "gridCellMin";
 const SHOW_RECENTLY_SETTING = "showRecently";
 const DEFAULT_CONVERT_VIDEOS_SETTING = "defaultConvertVideos";
+const DEFAULT_GIF_QUALITY_SETTING = "defaultGifQuality";
 const RESERVED_GROUP_LABELS = new Set(["all", "favorites"]);
 const PREVIEW_MODE = new URLSearchParams(location.search).has("preview");
 const NEW_GROUP_VALUE = "__new_group__";
@@ -84,6 +90,7 @@ let libraryIsScrolling = false;
 const gridGifIndex = new Map();
 let pendingImportArchive = null;
 let pendingMediaImport = null;
+let mediaImportEstimateVersion = 0;
 let pendingSourceDuplicateDecision = null;
 
 const state = {
@@ -93,6 +100,7 @@ const state = {
   gridCellMin: null,
   showRecently: true,
   defaultConvertVideos: false,
+  defaultGifQuality: "medium",
   groups: [],
   settingsTab: "general",
   previewId: null,
@@ -131,6 +139,7 @@ const el = {
   defaultConvertVideosInput: document.querySelector(
     "#defaultConvertVideosInput",
   ),
+  defaultGifQualityInput: document.querySelector("#defaultGifQualityInput"),
   siteAccessMessage: document.querySelector("#siteAccessMessage"),
   siteAccessWarning: document.querySelector("#siteAccessWarning"),
   gridCellPreviewTile: document.querySelector("#gridCellPreviewTile"),
@@ -184,6 +193,9 @@ const el = {
   mediaImportNewGroup: document.querySelector("#mediaImportNewGroup"),
   mediaImportConvertField: document.querySelector("#mediaImportConvertField"),
   mediaImportConvertVideos: document.querySelector("#mediaImportConvertVideos"),
+  mediaImportQualityField: document.querySelector("#mediaImportQualityField"),
+  mediaImportQuality: document.querySelector("#mediaImportQuality"),
+  mediaImportSizeEstimate: document.querySelector("#mediaImportSizeEstimate"),
   mediaImportConfirmButton: document.querySelector("#mediaImportConfirmButton"),
   sourceDuplicateDialog: document.querySelector("#sourceDuplicateDialog"),
   sourceDuplicateSummary: document.querySelector("#sourceDuplicateSummary"),
@@ -222,6 +234,11 @@ function wireEvents() {
   );
   el.importConfirmButton.addEventListener("click", confirmImportArchive);
   el.mediaImportGroup.addEventListener("change", syncMediaImportGroupField);
+  el.mediaImportConvertVideos.addEventListener(
+    "change",
+    updateMediaImportEstimate,
+  );
+  el.mediaImportQuality.addEventListener("change", updateMediaImportEstimate);
   el.mediaImportConfirmButton.addEventListener("click", confirmMediaImport);
   el.mediaImportDialog.addEventListener("close", clearPendingMediaImport);
   el.exportAllButton.addEventListener("click", exportAllMedia);
@@ -234,6 +251,7 @@ function wireEvents() {
     "change",
     saveDefaultConvertVideos,
   );
+  el.defaultGifQualityInput.addEventListener("change", saveDefaultGifQuality);
   el.sourceDuplicateCancelButton.addEventListener("click", () =>
     finishSourceDuplicateDecision("cancel"),
   );
@@ -348,6 +366,9 @@ async function refresh() {
     state.showRecently = (await getSetting(SHOW_RECENTLY_SETTING)) !== false;
     state.defaultConvertVideos =
       (await getSetting(DEFAULT_CONVERT_VIDEOS_SETTING)) === true;
+    state.defaultGifQuality = normalizeGifQuality(
+      await getSetting(DEFAULT_GIF_QUALITY_SETTING),
+    );
   }
 
   applyGridCellMin();
@@ -793,7 +814,10 @@ function renderMediaImportDialog(importRequest) {
   el.mediaImportNewGroup.value = "";
   el.mediaImportConvertVideos.checked = state.defaultConvertVideos;
   el.mediaImportConvertField.hidden = videoCount === 0;
+  el.mediaImportQualityField.hidden = videoCount === 0;
+  el.mediaImportQuality.value = state.defaultGifQuality;
   syncMediaImportGroupField();
+  updateMediaImportEstimate();
 }
 
 function syncMediaImportGroupField() {
@@ -801,6 +825,32 @@ function syncMediaImportGroupField() {
   el.mediaImportNewGroupField.hidden = !creatingGroup;
   if (creatingGroup)
     requestAnimationFrame(() => el.mediaImportNewGroup.focus());
+}
+
+async function updateMediaImportEstimate() {
+  const version = ++mediaImportEstimateVersion;
+  const videos = pendingMediaImport?.files.filter(isVideoFile) || [];
+  const converting = videos.length > 0 && el.mediaImportConvertVideos.checked;
+  el.mediaImportQuality.disabled = !converting;
+  el.mediaImportSizeEstimate.hidden = !converting;
+  if (!converting) return;
+
+  el.mediaImportSizeEstimate.textContent = "Estimating GIF size…";
+  const gifOptions = gifOptionsForQuality(el.mediaImportQuality.value);
+  let estimatedBytes = 0;
+  try {
+    for (const file of videos) {
+      if (version !== mediaImportEstimateVersion) return;
+      estimatedBytes += await estimateVideoGifSize(file, gifOptions);
+    }
+    if (version !== mediaImportEstimateVersion) return;
+    el.mediaImportSizeEstimate.textContent = `Estimated GIF size: about ${bytesToHuman(estimatedBytes)} total. Based on sampled frames; actual size may vary.`;
+  } catch {
+    if (version === mediaImportEstimateVersion) {
+      el.mediaImportSizeEstimate.textContent =
+        "GIF size estimate unavailable for this video.";
+    }
+  }
 }
 
 async function confirmMediaImport() {
@@ -825,6 +875,7 @@ async function confirmMediaImport() {
   const options = {
     group,
     convertVideos: el.mediaImportConvertVideos.checked,
+    gifQuality: normalizeGifQuality(el.mediaImportQuality.value),
   };
   pendingMediaImport = null;
   el.mediaImportDialog.close();
@@ -832,6 +883,7 @@ async function confirmMediaImport() {
 }
 
 function clearPendingMediaImport() {
+  mediaImportEstimateVersion += 1;
   pendingMediaImport = null;
   el.fileInput.value = "";
 }
@@ -881,7 +933,11 @@ async function performMediaImport(importRequest, options) {
         };
       } else if (converting) {
         setProgress(0);
-        const gifBlob = await convertVideoToGif(file, {}, setProgress);
+        const gifBlob = await convertVideoToGif(
+          file,
+          gifOptionsForQuality(options.gifQuality),
+          setProgress,
+        );
         const convertedFilename = `${stripExtension(file.name)}.gif`;
         result =
           duplicateAction === "overwrite"
@@ -1412,6 +1468,7 @@ function openSettingsDialog(initialTab = "general") {
   el.gridCellMinInput.value = state.gridCellMin || "";
   el.showRecentlyInput.checked = state.showRecently;
   el.defaultConvertVideosInput.checked = state.defaultConvertVideos;
+  el.defaultGifQualityInput.value = state.defaultGifQuality;
   updateGridCellPreview();
   setSettingsTab(initialTab);
   if (!el.settingsDialog.open) el.settingsDialog.showModal();
@@ -1770,6 +1827,16 @@ async function saveDefaultConvertVideos() {
       ? "Video imports will default to GIF conversion."
       : "Video imports will keep their original format by default.",
   );
+}
+
+async function saveDefaultGifQuality() {
+  state.defaultGifQuality = normalizeGifQuality(
+    el.defaultGifQualityInput.value,
+  );
+  if (!PREVIEW_MODE) {
+    await saveSetting(DEFAULT_GIF_QUALITY_SETTING, state.defaultGifQuality);
+  }
+  setStatus(`Default GIF quality set to ${state.defaultGifQuality}.`);
 }
 
 function normalizeGridCellMin(value) {
